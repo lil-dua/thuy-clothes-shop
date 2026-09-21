@@ -1,0 +1,56 @@
+{
+	"name": "lumi-shop",
+	"description": "Website b\u00e1n qu\u1ea7n \u00e1o n\u1eef & tr\u1ebb em \u2014 storefront + trang qu\u1ea3n tr\u1ecb tr\u00ean Cloudflare Workers",
+	"cloudflare": {
+		"label": "React Router Framework Starter",
+		"products": [
+			"Workers"
+		],
+		"categories": [
+			"storage"
+		],
+		"preview_icon_url": "https://imagedelivery.net/wSMYJvS3Xw-n339CbDyDIA/36a99c4a-8919-4e6e-ac9e-e55974407200/public",
+		"preview_image_url": "https://imagedelivery.net/wSMYJvS3Xw-n339CbDyDIA/65455e96-7992-425f-44e4-30f3e7d7f900/preview",
+		"publish": true
+	},
+	"dependencies": {
+		"isbot": "5.1.32",
+		"react": "19.2.1",
+		"react-dom": "19.2.1",
+		"react-router": "7.9.6"
+	},
+	"devDependencies": {
+		"@cloudflare/vite-plugin": "1.52.1",
+		"@react-router/dev": "7.9.6",
+		"@tailwindcss/vite": "4.1.17",
+		"@types/node": "24.10.1",
+		"@types/react": "19.2.7",
+		"@types/react-dom": "19.2.3",
+		"playwright": "^1.63.0",
+		"tailwindcss": "4.1.17",
+		"typescript": "5.9.3",
+		"vite": "^7.0.0",
+		"vite-tsconfig-paths": "5.1.4",
+		"wrangler": "4.127.0"
+	},
+	"private": true,
+	"scripts": {
+		"dev": "react-router dev",
+		"build": "react-router build",
+		"preview": "npm run build && vite preview",
+		"deploy": "npm run build && wrangler deploy",
+		"typecheck": "npm run typegen && tsc -b",
+		"typegen": "wrangler types && react-router typegen",
+		"cf-typegen": "wrangler types && react-router typegen",
+		"check": "npm run typegen && tsc -b && react-router build && wrangler deploy --dry-run",
+		"db:migrate": "wrangler d1 migrations apply lumi-shop-db --local",
+		"db:migrate:remote": "wrangler d1 migrations apply lumi-shop-db --remote",
+		"db:seed": "wrangler d1 execute lumi-shop-db --local --file db/seed.sql --yes && node scripts/seed-images.mjs",
+		"db:seed-orders": "node scripts/seed-orders.mjs",
+		"db:reset": "rm -rf .wrangler/state/v3/d1 && npm run db:migrate && npm run db:seed",
+		"db:studio": "wrangler d1 execute lumi-shop-db --local --command",
+		"admin:create": "node scripts/create-admin.mjs",
+		"screenshots": "node scripts/screenshots.mjs"
+	},
+	"type": "module"
+}

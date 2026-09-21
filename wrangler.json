@@ -1,0 +1,29 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "lumi-shop",
+	"main": "./workers/app.ts",
+	"compatibility_date": "2025-10-08",
+	"compatibility_flags": ["nodejs_compat"],
+	"observability": {
+		"enabled": true
+	},
+	"upload_source_maps": true,
+	"vars": {
+		"SHOP_NAME": "Lumi",
+		"SHOP_TAGLINE": "Thời trang cho những khoảnh khắc đẹp nhất"
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "lumi-shop-db",
+			"database_id": "PLACEHOLDER_CHAY_WRANGLER_D1_CREATE",
+			"migrations_dir": "db/migrations"
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "IMAGES",
+			"bucket_name": "lumi-shop-images"
+		}
+	]
+}

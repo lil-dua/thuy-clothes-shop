@@ -1,0 +1,427 @@
+import { Form, data } from "react-router";
+import type { Route } from "./+types/settings";
+import { PageHeader } from "~/components/admin/ui";
+import { CheckIcon, TrashIcon, UploadIcon } from "~/components/icons";
+import { requireAdmin, hashPassword, verifyPassword } from "~/lib/auth.server";
+import { getCategories } from "~/lib/db.server";
+import { slugify } from "~/lib/format";
+import { uploadProductImage } from "~/lib/images.server";
+import { IMAGE_PLACEHOLDER, imageUrl } from "~/lib/images";
+import { getSettings, updateSettings, type ShopSettings } from "~/lib/settings.server";
+import { TARGET_GROUPS, type TargetGroup } from "~/lib/types";
+
+export function meta() {
+	return [{ title: "Cài đặt — Lumi Admin" }, { name: "robots", content: "noindex" }];
+}
+
+export async function loader({ request, context }: Route.LoaderArgs) {
+	const db = context.cloudflare.env.DB;
+	const [settings, categories, user] = await Promise.all([
+		getSettings(db),
+		getCategories(db),
+		requireAdmin(db, request),
+	]);
+	return { settings, categories, user };
+}
+
+export async function action({ request, context }: Route.ActionArgs) {
+	const env = context.cloudflare.env;
+	const db = env.DB;
+	const user = await requireAdmin(db, request);
+
+	const form = await request.formData();
+	const intent = String(form.get("intent") ?? "");
+
+	// --- Thông tin shop / vận chuyển -------------------------------------
+	if (intent === "shop" || intent === "shipping") {
+		const keys =
+			intent === "shop"
+				? (["shop_name", "shop_tagline", "shop_phone", "shop_email", "shop_address", "threads_handle"] as const)
+				: (["shipping_fee", "free_shipping_threshold", "order_hold_minutes", "return_policy_days"] as const);
+
+		const values: Partial<Record<keyof ShopSettings, string>> = {};
+		for (const key of keys) values[key] = String(form.get(key) ?? "").trim();
+		await updateSettings(db, values);
+		return data({ message: "Đã lưu cài đặt" });
+	}
+
+	// --- Thông tin nhận tiền ----------------------------------------------
+	if (intent === "payment") {
+		const values: Partial<Record<keyof ShopSettings, string>> = {
+			bank_id: String(form.get("bank_id") ?? "").trim().toUpperCase(),
+			bank_account_no: String(form.get("bank_account_no") ?? "").trim(),
+			bank_account_name: String(form.get("bank_account_name") ?? "").trim().toUpperCase(),
+			momo_phone: String(form.get("momo_phone") ?? "").trim(),
+			momo_name: String(form.get("momo_name") ?? "").trim(),
+		};
+
+		const qrFile = form.get("momo_qr");
+		if (qrFile instanceof File && qrFile.size > 0) {
+			const upload = await uploadProductImage(env.IMAGES, qrFile, "settings");
+			if (!upload.ok) return data({ error: upload.error }, { status: 400 });
+			values.momo_qr_key = upload.key;
+		}
+		if (form.get("removeMomoQr") === "1") values.momo_qr_key = "";
+
+		await updateSettings(db, values);
+		return data({ message: "Đã lưu thông tin thanh toán" });
+	}
+
+	// --- Danh mục ----------------------------------------------------------
+	if (intent === "category-add") {
+		const name = String(form.get("categoryName") ?? "").trim();
+		const group = String(form.get("targetGroup") ?? "");
+		if (name.length < 2 || !["women", "kids"].includes(group)) {
+			return data({ error: "Nhập tên danh mục và chọn nhóm đối tượng" }, { status: 400 });
+		}
+
+		// Slug phải kèm nhóm: "Váy" của đồ nữ và của trẻ em là hai danh mục khác nhau
+		const slug = `${slugify(name)}-${group === "women" ? "nu" : "tre-em"}`;
+		const existing = await db
+			.prepare(`SELECT 1 AS hit FROM categories WHERE slug = ?1`)
+			.bind(slug)
+			.first();
+		if (existing) return data({ error: "Danh mục này đã tồn tại" }, { status: 400 });
+
+		await db
+			.prepare(
+				`INSERT INTO categories (slug, name, target_group, sort_order)
+				 VALUES (?1, ?2, ?3,
+				   (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM categories WHERE target_group = ?3))`,
+			)
+			.bind(slug, name, group)
+			.run();
+		return data({ message: `Đã thêm danh mục "${name}"` });
+	}
+
+	if (intent === "category-toggle") {
+		await db
+			.prepare(`UPDATE categories SET is_active = 1 - is_active WHERE id = ?1`)
+			.bind(Number.parseInt(String(form.get("categoryId")), 10))
+			.run();
+		return data({ message: "Đã cập nhật danh mục" });
+	}
+
+	// --- Đổi mật khẩu ------------------------------------------------------
+	if (intent === "password") {
+		const current = String(form.get("currentPassword") ?? "");
+		const next = String(form.get("newPassword") ?? "");
+		const confirm = String(form.get("confirmPassword") ?? "");
+
+		if (next.length < 8) {
+			return data({ error: "Mật khẩu mới cần ít nhất 8 ký tự" }, { status: 400 });
+		}
+		if (next !== confirm) {
+			return data({ error: "Mật khẩu xác nhận không khớp" }, { status: 400 });
+		}
+
+		const row = await db
+			.prepare(`SELECT password_hash FROM admin_users WHERE id = ?1`)
+			.bind(user.id)
+			.first<{ password_hash: string }>();
+		if (!row || !(await verifyPassword(current, row.password_hash))) {
+			return data({ error: "Mật khẩu hiện tại không đúng" }, { status: 400 });
+		}
+
+		await db
+			.prepare(`UPDATE admin_users SET password_hash = ?2 WHERE id = ?1`)
+			.bind(user.id, await hashPassword(next))
+			.run();
+
+		// Đổi mật khẩu thì thu hồi mọi phiên khác đang đăng nhập
+		await db
+			.prepare(`DELETE FROM admin_sessions WHERE admin_user_id = ?1`)
+			.bind(user.id)
+			.run();
+
+		return data({ message: "Đã đổi mật khẩu. Vui lòng đăng nhập lại." });
+	}
+
+	return data({ error: "Thao tác không hợp lệ" }, { status: 400 });
+}
+
+export default function AdminSettings({ loaderData, actionData }: Route.ComponentProps) {
+	const { settings, categories } = loaderData;
+
+	return (
+		<>
+			<PageHeader
+				title="Cài đặt"
+				description="Thông tin shop, tài khoản nhận tiền, phí vận chuyển và danh mục"
+			/>
+
+			{actionData && "message" in actionData && actionData.message && (
+				<p className="mb-4 flex items-center gap-2 rounded-xl bg-green-50 px-4 py-3 text-sm text-green-700">
+					<CheckIcon className="h-4 w-4" />
+					{actionData.message}
+				</p>
+			)}
+			{actionData && "error" in actionData && actionData.error && (
+				<p className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+					{actionData.error}
+				</p>
+			)}
+
+			<div className="grid gap-5 xl:grid-cols-2">
+				{/* --- Thông tin shop ------------------------------------- */}
+				<Section title="Thông tin shop">
+					<Form method="post" className="space-y-4">
+						<input type="hidden" name="intent" value="shop" />
+						<Field label="Tên shop" name="shop_name" defaultValue={settings.shop_name} />
+						<Field
+							label="Khẩu hiệu"
+							name="shop_tagline"
+							defaultValue={settings.shop_tagline}
+						/>
+						<Field
+							label="Hotline"
+							name="shop_phone"
+							defaultValue={settings.shop_phone}
+							placeholder="0987654321"
+						/>
+						<Field label="Email" name="shop_email" defaultValue={settings.shop_email} />
+						<Field label="Địa chỉ" name="shop_address" defaultValue={settings.shop_address} />
+						<Field
+							label="Tài khoản Threads"
+							name="threads_handle"
+							defaultValue={settings.threads_handle}
+							placeholder="lumi.shop"
+							hint="Không cần ký tự @"
+						/>
+						<button type="submit" className="btn-primary btn-md">
+							Lưu thông tin
+						</button>
+					</Form>
+				</Section>
+
+				{/* --- Thanh toán ------------------------------------------ */}
+				<Section title="Nhận tiền">
+					<Form method="post" encType="multipart/form-data" className="space-y-4">
+						<input type="hidden" name="intent" value="payment" />
+
+						<Field
+							label="Mã ngân hàng (VietQR)"
+							name="bank_id"
+							defaultValue={settings.bank_id}
+							placeholder="VCB, TCB, MB, ACB..."
+							hint="Dùng để tạo mã QR chuyển khoản tự điền số tiền và mã đơn"
+						/>
+						<Field
+							label="Số tài khoản"
+							name="bank_account_no"
+							defaultValue={settings.bank_account_no}
+						/>
+						<Field
+							label="Tên chủ tài khoản"
+							name="bank_account_name"
+							defaultValue={settings.bank_account_name}
+							placeholder="NGUYEN THI THUY"
+							hint="Viết in hoa, không dấu"
+						/>
+
+						<hr className="border-ink-100" />
+
+						<Field label="Số MoMo" name="momo_phone" defaultValue={settings.momo_phone} />
+						<Field
+							label="Tên tài khoản MoMo"
+							name="momo_name"
+							defaultValue={settings.momo_name}
+						/>
+
+						<div>
+							<span className="field-label">Ảnh QR MoMo</span>
+							{settings.momo_qr_key ? (
+								<div className="flex items-center gap-3">
+									<img
+										src={imageUrl(settings.momo_qr_key) ?? IMAGE_PLACEHOLDER}
+										alt="Mã QR MoMo hiện tại"
+										className="h-24 w-24 rounded-lg border border-ink-200 object-contain p-1"
+									/>
+									<label className="flex cursor-pointer items-center gap-1.5 text-sm text-red-600">
+										<input type="checkbox" name="removeMomoQr" value="1" className="accent-red-500" />
+										<TrashIcon className="h-4 w-4" />
+										Gỡ ảnh này
+									</label>
+								</div>
+							) : (
+								<p className="mb-2 text-xs text-ink-400">
+									Chưa có ảnh QR. Tải ảnh QR cá nhân từ app MoMo lên để khách quét.
+								</p>
+							)}
+							<label className="mt-2 flex cursor-pointer items-center gap-2 rounded-xl border-2 border-dashed border-ink-200 px-4 py-4 text-sm hover:border-brand-300">
+								<UploadIcon className="h-5 w-5 text-brand-400" />
+								Chọn ảnh QR mới
+								<input type="file" name="momo_qr" accept="image/*" className="sr-only" />
+							</label>
+						</div>
+
+						<button type="submit" className="btn-primary btn-md">
+							Lưu thông tin thanh toán
+						</button>
+					</Form>
+				</Section>
+
+				{/* --- Vận chuyển ------------------------------------------ */}
+				<Section title="Vận chuyển & đổi trả">
+					<Form method="post" className="space-y-4">
+						<input type="hidden" name="intent" value="shipping" />
+						<Field
+							label="Phí vận chuyển mặc định (đ)"
+							name="shipping_fee"
+							defaultValue={settings.shipping_fee}
+							inputMode="numeric"
+						/>
+						<Field
+							label="Miễn phí ship cho đơn từ (đ)"
+							name="free_shipping_threshold"
+							defaultValue={settings.free_shipping_threshold}
+							inputMode="numeric"
+							hint="Đặt 0 nếu không áp dụng"
+						/>
+						<Field
+							label="Thời gian giữ hàng chờ chuyển khoản (phút)"
+							name="order_hold_minutes"
+							defaultValue={settings.order_hold_minutes}
+							inputMode="numeric"
+							hint="Quá hạn, đơn tự huỷ và hàng trả lại kho"
+						/>
+						<Field
+							label="Số ngày đổi trả"
+							name="return_policy_days"
+							defaultValue={settings.return_policy_days}
+							inputMode="numeric"
+						/>
+						<button type="submit" className="btn-primary btn-md">
+							Lưu
+						</button>
+					</Form>
+				</Section>
+
+				{/* --- Danh mục -------------------------------------------- */}
+				<Section title="Danh mục sản phẩm">
+					<Form method="post" className="mb-4 flex flex-wrap items-end gap-2">
+						<input type="hidden" name="intent" value="category-add" />
+						<div className="min-w-40 flex-1">
+							<label htmlFor="categoryName" className="field-label">
+								Tên danh mục
+							</label>
+							<input
+								id="categoryName"
+								name="categoryName"
+								placeholder="Váy"
+								className="field !py-2"
+							/>
+						</div>
+						<div>
+							<label htmlFor="targetGroup" className="field-label">
+								Nhóm
+							</label>
+							<select id="targetGroup" name="targetGroup" className="field !w-auto !py-2">
+								{(Object.keys(TARGET_GROUPS) as TargetGroup[]).map((group) => (
+									<option key={group} value={group}>
+										{TARGET_GROUPS[group].label}
+									</option>
+								))}
+							</select>
+						</div>
+						<button type="submit" className="btn-outline btn-md">
+							Thêm
+						</button>
+					</Form>
+
+					{(Object.keys(TARGET_GROUPS) as TargetGroup[]).map((group) => (
+						<div key={group} className="mb-4 last:mb-0">
+							<p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-400">
+								{TARGET_GROUPS[group].label}
+							</p>
+							<div className="flex flex-wrap gap-2">
+								{categories.filter((category) => category.target_group === group).length ===
+								0 ? (
+									<p className="text-sm text-ink-400">Chưa có danh mục nào.</p>
+								) : (
+									categories
+										.filter((category) => category.target_group === group)
+										.map((category) => (
+											<Form key={category.id} method="post">
+												<input type="hidden" name="intent" value="category-toggle" />
+												<input type="hidden" name="categoryId" value={category.id} />
+												<button type="submit" className="chip" title="Bấm để ẩn/hiện">
+													{category.name}
+												</button>
+											</Form>
+										))
+								)}
+							</div>
+						</div>
+					))}
+					<p className="text-xs text-ink-400">
+						Danh mục đã ẩn không hiện trong danh sách này. Mở lại bằng cách thêm danh mục
+						cùng tên.
+					</p>
+				</Section>
+
+				{/* --- Mật khẩu -------------------------------------------- */}
+				<Section title="Đổi mật khẩu">
+					<Form method="post" className="space-y-4">
+						<input type="hidden" name="intent" value="password" />
+						<Field
+							label="Mật khẩu hiện tại"
+							name="currentPassword"
+							type="password"
+							autoComplete="current-password"
+						/>
+						<Field
+							label="Mật khẩu mới"
+							name="newPassword"
+							type="password"
+							autoComplete="new-password"
+							hint="Ít nhất 8 ký tự"
+						/>
+						<Field
+							label="Xác nhận mật khẩu mới"
+							name="confirmPassword"
+							type="password"
+							autoComplete="new-password"
+						/>
+						<button type="submit" className="btn-primary btn-md">
+							Đổi mật khẩu
+						</button>
+						<p className="text-xs text-ink-400">
+							Sau khi đổi, mọi thiết bị đang đăng nhập sẽ phải đăng nhập lại.
+						</p>
+					</Form>
+				</Section>
+			</div>
+		</>
+	);
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+	return (
+		<section className="card p-4 lg:p-5">
+			<h2 className="mb-4 font-semibold text-ink-900">{title}</h2>
+			{children}
+		</section>
+	);
+}
+
+function Field({
+	label,
+	name,
+	hint,
+	...props
+}: {
+	label: string;
+	name: string;
+	hint?: string;
+} & React.InputHTMLAttributes<HTMLInputElement>) {
+	return (
+		<div>
+			<label htmlFor={name} className="field-label">
+				{label}
+			</label>
+			<input id={name} name={name} className="field" {...props} />
+			{hint && <p className="mt-1 text-xs text-ink-400">{hint}</p>}
+		</div>
+	);
+}
