@@ -1,5 +1,10 @@
 # Dự án: Website quản lý tồn kho & bán quần áo
 
+> **Trạng thái (21/09/2026):** giai đoạn 1, 2 và 4 đã hoàn thành và chạy được ở
+> local. Xem [README](../README.md) để biết cách chạy, deploy và những quyết định
+> kỹ thuật phát sinh. Schema thực tế đã mở rộng so với mục 4 dưới đây — bản đang
+> dùng nằm ở `db/migrations/0001_init.sql`.
+
 ## 1. Bối cảnh
 - Startup bán quần áo, hiện quảng bá qua tài khoản Threads, nhận đơn qua tin nhắn Threads.
 - Mục tiêu: xây một website quản lý tồn kho (sản phẩm, size, số lượng, giá nhập, giá bán, lợi nhuận) mà khách cũng xem được, cộng thêm tự động hoá liên kết với Threads.
@@ -134,34 +139,47 @@ CREATE INDEX idx_order_items_order ON order_items(order_id);
 - Chuẩn bị số tài khoản ngân hàng + mã QR MoMo cá nhân
 - Kết nối Typefully
 
-**Giai đoạn 1 — Nền tảng dữ liệu + trang xem tồn kho (MVP chỉ xem)**
+**Giai đoạn 1 — Nền tảng dữ liệu + trang xem tồn kho** ✅ xong
 - Tạo schema D1 (mục 4)
 - Trang admin: thêm/sửa sản phẩm, upload ảnh lên R2
 - Trang công khai: danh sách sản phẩm, tồn kho theo size, giá — chưa có giỏ hàng
 - Deploy thử lên Cloudflare Pages
 
-**Giai đoạn 2 — Giỏ hàng + checkout 3 phương thức**
+**Giai đoạn 2 — Giỏ hàng + checkout 3 phương thức** ✅ xong
 - Giỏ hàng phía trình duyệt, bảng orders + order_items
 - Trang checkout: chọn COD / VietQR / MoMo
 - Trang admin: danh sách đơn, đánh dấu đã thanh toán/đã giao
 - Tự trừ tồn kho theo size khi tạo đơn
 
-**Giai đoạn 3 — Tự động đăng Threads (chiều xuôi)**
+**Giai đoạn 3 — Tự động đăng Threads (chiều xuôi)** ⬜ chưa làm
 - Nút "Đăng lên Threads" trong trang admin, đính kèm ảnh, qua Typefully
 
-**Giai đoạn 4 — Vận hành & tối ưu**
+**Giai đoạn 4 — Vận hành & tối ưu** ✅ xong (cảnh báo hết hàng, dashboard doanh thu/lợi nhuận, tra cứu đơn)
 - Cảnh báo sắp hết hàng theo size
 - Dashboard doanh thu/lợi nhuận tự tính
 - Trang tra cứu đơn hàng bằng mã đơn cho khách
 - Hoá đơn/biên nhận tự gửi sau khi xác nhận đơn
 
-**Giai đoạn 5 — Để sau, không gấp**
+**Giai đoạn 5 — Để sau, không gấp** (mã giảm giá và lưu thông tin khách quen đã làm sớm)
 - Chiều ngược Threads → web
 - Nâng MoMo lên API chính thức
 - Mã giảm giá, lưu thông tin khách quen, thống kê size bán chạy
 - Domain riêng chính thức (.shop/.com trước, .vn sau nếu cần)
 
-## 9. Việc còn cần quyết định
+## 9. Thay đổi so với kế hoạch ban đầu
+
+- **Phân loại nữ / trẻ em**: yêu cầu bổ sung sau khi viết brief. Cột `category`
+  dạng chữ tự do được thay bằng bảng `categories` có `target_group`.
+- **Bảng mới**: `admin_users`, `admin_sessions`, `settings`, `discount_codes`,
+  `product_reviews`.
+- **`product_variants` thêm `is_active`** để ẩn size đã ngừng bán mà không phá
+  lịch sử đơn.
+- **Mã giảm giá** làm sớm hơn kế hoạch vì bản thiết kế giao diện có ô nhập mã ở
+  giỏ hàng.
+- **Framework**: React Router v7 chạy trên Cloudflare Workers, thay vì Pages +
+  Workers tách rời — một lần deploy, một domain cho cả hai giao diện.
+
+## 10. Việc còn cần quyết định
 - Tên shop / tên miền cụ thể
 - Có cần .vn ngay từ đầu không, hay dùng .shop/.com trước
 - Lịch làm: buổi tối trong tuần hay dồn vào cuối tuần theo khối 3–4 tiếng/giai đoạn
