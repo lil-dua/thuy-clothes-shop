@@ -19,7 +19,7 @@
 		{
 			"binding": "DB",
 			"database_name": "lumi-shop-db",
-			"database_id": "PLACEHOLDER_CHAY_WRANGLER_D1_CREATE",
+			"database_id": "2f9513be-5b71-4895-9be7-2cd5ab3a9f21",
 			"migrations_dir": "db/migrations"
 		}
 	],

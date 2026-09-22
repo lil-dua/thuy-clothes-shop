@@ -47,6 +47,8 @@
 		"db:migrate:remote": "wrangler d1 migrations apply lumi-shop-db --remote",
 		"db:seed": "wrangler d1 execute lumi-shop-db --local --file db/seed.sql --yes && node scripts/seed-images.mjs",
 		"db:seed-orders": "node scripts/seed-orders.mjs",
+		"db:seed-categories": "wrangler d1 execute lumi-shop-db --local --file db/seed-categories.sql --yes",
+		"db:seed-categories:remote": "wrangler d1 execute lumi-shop-db --remote --file db/seed-categories.sql --yes",
 		"db:reset": "rm -rf .wrangler/state/v3/d1 && npm run db:migrate && npm run db:seed",
 		"db:studio": "wrangler d1 execute lumi-shop-db --local --command",
 		"admin:create": "node scripts/create-admin.mjs",
