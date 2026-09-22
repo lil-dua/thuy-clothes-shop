@@ -33,14 +33,16 @@ Khi đã đăng nhập quản trị, storefront hiện một dải đen ở đ�
 |:--:|:--:|
 | <img src="screenshots/21-admin-tong-quan.png" width="420" alt="Tổng quan"> | <img src="screenshots/22-admin-san-pham.png" width="420" alt="Danh sách sản phẩm"> |
 | **Tổng quan** | **Danh sách sản phẩm** |
-| <img src="screenshots/23-admin-sua-san-pham.png" width="420" alt="Sửa sản phẩm & tồn kho theo size"> | <img src="screenshots/24-admin-don-hang.png" width="420" alt="Đơn hàng"> |
-| **Sửa sản phẩm & tồn kho theo size** | **Đơn hàng** |
-| <img src="screenshots/25-admin-chi-tiet-don.png" width="420" alt="Chi tiết đơn"> | <img src="screenshots/26-admin-khach-hang.png" width="420" alt="Khách hàng"> |
-| **Chi tiết đơn** | **Khách hàng** |
-| <img src="screenshots/27-admin-khuyen-mai.png" width="420" alt="Khuyến mãi"> | <img src="screenshots/28-admin-bao-cao.png" width="420" alt="Báo cáo"> |
-| **Khuyến mãi** | **Báo cáo** |
-| <img src="screenshots/29-admin-cai-dat.png" width="420" alt="Cài đặt"> | <img src="screenshots/20-admin-dang-nhap.png" width="420" alt="Đăng nhập quản trị"> |
-| **Cài đặt** | **Đăng nhập quản trị** |
+| <img src="screenshots/23-admin-sua-san-pham.png" width="420" alt="Sửa sản phẩm & tồn kho theo size"> | <img src="screenshots/24-admin-dang-threads.png" width="420" alt="Đăng lên Threads"> |
+| **Sửa sản phẩm & tồn kho theo size** | **Đăng lên Threads** |
+| <img src="screenshots/25-admin-don-hang.png" width="420" alt="Đơn hàng"> | <img src="screenshots/26-admin-chi-tiet-don.png" width="420" alt="Chi tiết đơn"> |
+| **Đơn hàng** | **Chi tiết đơn** |
+| <img src="screenshots/27-admin-khach-hang.png" width="420" alt="Khách hàng"> | <img src="screenshots/28-admin-khuyen-mai.png" width="420" alt="Khuyến mãi"> |
+| **Khách hàng** | **Khuyến mãi** |
+| <img src="screenshots/29-admin-bao-cao.png" width="420" alt="Báo cáo"> | <img src="screenshots/30-admin-cai-dat.png" width="420" alt="Cài đặt"> |
+| **Báo cáo** | **Cài đặt** |
+| <img src="screenshots/20-admin-dang-nhap.png" width="420" alt="Đăng nhập quản trị"> |  |
+| **Đăng nhập quản trị** |  |
 
 ## Công nghệ
 
@@ -168,9 +170,44 @@ mới xem được.
 **Mọi số tiền tính lại ở server** từ dữ liệu trong D1. Giá, phí ship, giảm giá
 gửi lên từ trình duyệt đều bị bỏ qua.
 
+**API key không bao giờ rời server.** Khoá Typefully nằm trong bảng `settings`
+nhưng cố ý không có trong `DEFAULT_SETTINGS`, nên `getSettings()` không đọc ra
+nó và loader trang Cài đặt không thể vô tình gửi xuống trình duyệt. Đọc/ghi phải
+đi qua `getSecret` / `setSecret`. Giao diện chỉ hiện "đã cấu hình", không hiện
+giá trị.
+
+## Đăng bài Threads
+
+Đi qua **Typefully** thay vì gọi thẳng API Threads của Meta: API chính chủ đòi
+đăng ký Meta Developer app và xác minh doanh nghiệp, chờ vài tuần. Typefully chỉ
+cần một API key.
+
+Cách bật:
+
+1. Vào Typefully → **Settings → API**, tạo một API key
+2. Mở **Cài đặt → Đăng bài Threads** trong trang quản trị, dán khoá vào
+   (khoá được gọi thử với Typefully trước khi lưu — dán sai là biết ngay)
+3. Bấm **Nạp danh sách tài khoản**, chọn tài khoản Threads sẽ đăng
+4. Sửa mẫu caption nếu muốn, bật **Tự đăng khi thêm sản phẩm mới** nếu cần
+
+Sau đó mỗi trang sửa sản phẩm có khối **Đăng lên Threads**: caption soạn sẵn từ
+mẫu (chỉ lấy size và màu còn hàng), sửa tay thoải mái, rồi chọn **Đăng ngay**
+hoặc **Lưu nháp trên Typefully** để xem lại trước khi lên sóng. Bài kèm tối đa 4
+ảnh đầu tiên của sản phẩm, đọc thẳng từ R2.
+
+Mọi lần đăng đều ghi vào bảng `social_posts` — thành công hay thất bại, kèm
+caption và thông báo lỗi — nên lịch sử đăng luôn tra được ngay dưới khối đó.
+Ảnh lỗi không làm hỏng cả bài: phần chữ vẫn được đăng, lỗi ảnh ghi lại riêng.
+
+Muốn giữ khoá ngoài database thì đặt làm secret của Cloudflare, code ưu tiên đọc
+biến môi trường trước bảng `settings`:
+
+```bash
+npx wrangler secret put TYPEFULLY_API_KEY
+```
+
 ## Chưa làm (theo kế hoạch trong `docs/`)
 
-- Tự động đăng bài Threads khi thêm sản phẩm (giai đoạn 3)
 - Chiều ngược Threads → web (giai đoạn 5)
 - Đối soát chuyển khoản tự động — hiện xác nhận thủ công trong trang đơn hàng
 - API MoMo chính thức — hiện dùng QR cá nhân, xác nhận thủ công

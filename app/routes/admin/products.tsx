@@ -8,6 +8,7 @@ import {
 } from "~/components/admin/ui";
 import { EditIcon, PlusIcon, SearchIcon, TrashIcon } from "~/components/icons";
 import { getCategories, listAdminProducts } from "~/lib/db.server";
+import { getPostedProductIds } from "~/lib/threads.server";
 import { cn, formatVnd } from "~/lib/format";
 import { IMAGE_PLACEHOLDER, imageUrl } from "~/lib/images";
 import { TARGET_GROUPS, type ProductStatus, type TargetGroup } from "~/lib/types";
@@ -32,7 +33,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 	const db = context.cloudflare.env.DB;
 	const url = new URL(request.url);
 
-	const [result, categories] = await Promise.all([
+	const [result, categories, postedIds] = await Promise.all([
 		listAdminProducts(db, {
 			search: url.searchParams.get("q")?.trim() || null,
 			categoryId: Number.parseInt(url.searchParams.get("danh-muc") ?? "", 10) || null,
@@ -41,9 +42,10 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 			perPage: 20,
 		}),
 		getCategories(db),
+		getPostedProductIds(db),
 	]);
 
-	return { ...result, categories };
+	return { ...result, categories, postedIds: [...postedIds] };
 }
 
 export async function action({ request, context }: Route.ActionArgs) {
@@ -66,6 +68,7 @@ export async function action({ request, context }: Route.ActionArgs) {
 
 export default function AdminProducts({ loaderData }: Route.ComponentProps) {
 	const { items, total, page, perPage, categories } = loaderData;
+	const posted = new Set(loaderData.postedIds);
 	const [searchParams] = useSearchParams();
 
 	const buildLink = (targetPage: number) => {
@@ -179,6 +182,14 @@ export default function AdminProducts({ loaderData }: Route.ComponentProps) {
 										>
 											{product.name}
 										</Link>
+										{posted.has(product.id) && (
+											<span
+												title="Đã đăng lên Threads"
+												className="ml-1.5 align-middle text-xs text-brand-400"
+											>
+												@
+											</span>
+										)}
 										<span className="block text-xs text-ink-400">
 											{product.category_name ?? "Chưa phân loại"}
 											{product.target_group &&

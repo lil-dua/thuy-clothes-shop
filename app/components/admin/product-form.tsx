@@ -26,10 +26,16 @@ export function ProductForm({
 	categories,
 	product,
 	errors = {},
+	threadsToggle,
 }: {
 	categories: Category[];
 	product?: ProductDetail;
 	errors?: ProductFormErrors;
+	/**
+	 * Chỉ truyền ở màn thêm mới: cho phép đăng Threads ngay sau khi lưu.
+	 * Màn sửa dùng khối ThreadsPanel riêng vì ở đó còn có lịch sử đăng.
+	 */
+	threadsToggle?: { available: boolean; defaultOn: boolean };
 }) {
 	const navigation = useNavigation();
 	const submitting = navigation.state === "submitting";
@@ -276,6 +282,25 @@ export function ProductForm({
 									</span>
 								</span>
 							</label>
+
+							{threadsToggle?.available && (
+								<label className="flex items-start gap-2.5 border-t border-ink-100 pt-4">
+									<input
+										type="checkbox"
+										name="postToThreads"
+										defaultChecked={threadsToggle.defaultOn}
+										className="mt-0.5 h-4.5 w-4.5 accent-brand-500"
+									/>
+									<span className="text-sm">
+										<span className="block font-medium text-ink-800">
+											Đăng lên Threads sau khi lưu
+										</span>
+										<span className="block text-xs text-ink-400">
+											Caption sinh từ mẫu trong Cài đặt, kèm ảnh vừa tải lên
+										</span>
+									</span>
+								</label>
+							)}
 						</div>
 					</section>
 
