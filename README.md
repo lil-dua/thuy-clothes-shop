@@ -191,9 +191,38 @@ Cách bật:
 4. Sửa mẫu caption nếu muốn, bật **Tự đăng khi thêm sản phẩm mới** nếu cần
 
 Sau đó mỗi trang sửa sản phẩm có khối **Đăng lên Threads**: caption soạn sẵn từ
-mẫu (chỉ lấy size và màu còn hàng), sửa tay thoải mái, rồi chọn **Đăng ngay**
-hoặc **Lưu nháp trên Typefully** để xem lại trước khi lên sóng. Bài kèm tối đa 4
-ảnh đầu tiên của sản phẩm, đọc thẳng từ R2.
+mẫu (chỉ lấy size và màu còn hàng), sửa tay thoải mái, rồi chọn một trong ba:
+
+- **Hẹn giờ đăng** — chọn ngày giờ (hoặc bấm nhanh *Tối nay 20:00*, *Sáng mai
+  10:00*, *Tối mai 20:00*). Typefully giữ bài và tự đăng đúng mốc đó.
+- **Đăng ngay**
+- **Chỉ lưu nháp** — bài nằm ở mục nháp trên Typefully để xem lại rồi tự bấm đăng
+
+Bài kèm tối đa 4 ảnh đầu tiên của sản phẩm, đọc thẳng từ R2.
+
+### Hẹn giờ hoạt động thế nào
+
+Việc **giữ bài và đăng đúng giờ là của Typefully**, không phải của worker này —
+API nhận `publish_at` là một mốc ISO có múi giờ và họ lo phần còn lại. Nghĩa là
+bài vẫn lên đúng giờ kể cả khi shop không có ai online, và không cần dựng hàng
+đợi riêng.
+
+Giờ nhập vào luôn được hiểu là **giờ Việt Nam**, kể cả khi chủ shop đang ngồi ở
+múi giờ khác — cho khớp với mọi thời gian khác trong hệ thống. Ô nhập chặn mốc
+quá khứ, server kiểm lại lần nữa trước khi gọi API.
+
+Bài đã hẹn hiện ở hai nơi: khối lịch sử ngay dưới sản phẩm, và một khối tổng hợp
+trên trang **Tổng quan**. Huỷ được bất cứ lúc nào trước giờ đăng — bản nháp bên
+Typefully cũng bị xoá theo.
+
+Một **cron chạy 15 phút một lần** (khai báo trong `wrangler.json`) hỏi lại
+Typefully xem bài đã lên sóng chưa rồi cập nhật trạng thái; cron *không* đăng
+hộ, chỉ để trang quản trị không hiển thị "Đã hẹn giờ" mãi sau khi bài đã đăng.
+Tiện thể cron cũng trả kho cho đơn quá hạn giữ chỗ — trước đây việc này chỉ chạy
+khi có người vào web, nên cả đêm không ai ghé là hàng bị giữ treo tới sáng.
+
+> Cron chỉ chạy được trên Cloudflare thật, không chạy ở `npm run dev`. Sau lần
+> deploy đầu, kiểm tra ở Cloudflare dashboard → Workers → lumi-shop → Triggers.
 
 Mọi lần đăng đều ghi vào bảng `social_posts` — thành công hay thất bại, kèm
 caption và thông báo lỗi — nên lịch sử đăng luôn tra được ngay dưới khối đó.

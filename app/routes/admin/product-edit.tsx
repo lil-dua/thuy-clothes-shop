@@ -9,9 +9,12 @@ import { parseProductForm, saveProduct } from "~/lib/product-form.server";
 import { getSecret, getSettings } from "~/lib/settings.server";
 import {
 	buildCaption,
+	cancelScheduledPost,
 	getProductPosts,
 	postProductToThreads,
+	syncScheduledPosts,
 } from "~/lib/threads.server";
+import { formatDateTime, vnLocalToIso, vnLocalToSqlUtc } from "~/lib/format";
 
 export function meta({ data }: Route.MetaArgs) {
 	return [
@@ -26,16 +29,20 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 	const id = Number.parseInt(params.id, 10);
 	if (!Number.isInteger(id)) throw new Response("Không tìm thấy", { status: 404 });
 
-	const [product, categories, settings, posts] = await Promise.all([
+	const [product, categories, settings] = await Promise.all([
 		getProductById(db, id),
 		getCategories(db),
 		getSettings(db),
-		getProductPosts(db, id),
 	]);
 	if (!product) throw new Response("Không tìm thấy sản phẩm", { status: 404 });
 
 	// API key không bao giờ rời server — chỉ gửi xuống trạng thái có/không
 	const apiKey = await getSecret(db, "typefully_api_key", env as unknown as Record<string, unknown>);
+
+	// Cron 15 phút một lần là đủ cho nền, nhưng khi chủ shop đang mở đúng trang
+	// này thì đồng bộ luôn để không phải chờ mới thấy bài đã lên sóng.
+	if (apiKey) await syncScheduledPosts(db, apiKey, settings, { limit: 5 });
+	const posts = await getProductPosts(db, id);
 
 	return {
 		product,
@@ -58,6 +65,26 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 
 	const form = await request.formData();
 
+	// --- Huỷ bài chưa đăng -------------------------------------------------
+	if (form.get("intent") === "cancel-threads") {
+		const [settings, apiKey] = await Promise.all([
+			getSettings(env.DB),
+			getSecret(env.DB, "typefully_api_key", env as unknown as Record<string, unknown>),
+		]);
+		if (!apiKey) {
+			return data({ threadsError: "Chưa cấu hình API key Typefully" }, { status: 400 });
+		}
+
+		const cancelled = await cancelScheduledPost(
+			env.DB,
+			apiKey,
+			settings,
+			Number.parseInt(String(form.get("postId") ?? ""), 10),
+		);
+		if (!cancelled.ok) return data({ threadsError: cancelled.error }, { status: 400 });
+		return data({ threadsMessage: "Đã huỷ bài đăng." });
+	}
+
 	// --- Đăng lên Threads -------------------------------------------------
 	if (form.get("intent") === "post-threads") {
 		const [product, settings, apiKey] = await Promise.all([
@@ -70,7 +97,30 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 			return data({ threadsError: "Chưa cấu hình API key Typefully" }, { status: 400 });
 		}
 
-		const publishNow = form.get("publishNow") !== "0";
+		// mode: "now" đăng ngay | "schedule" hẹn giờ | "draft" chỉ lưu nháp
+		const mode = String(form.get("mode") ?? "now");
+		let publishAt: string | null = null;
+		let scheduledAtUtc: string | null = null;
+
+		if (mode === "now") {
+			publishAt = "now";
+		} else if (mode === "schedule") {
+			const local = String(form.get("scheduleAt") ?? "");
+			publishAt = vnLocalToIso(local);
+			scheduledAtUtc = vnLocalToSqlUtc(local);
+			if (!publishAt || !scheduledAtUtc) {
+				return data({ threadsError: "Thời điểm hẹn giờ không hợp lệ" }, { status: 400 });
+			}
+			// Chặn hẹn vào quá khứ: Typefully sẽ từ chối, nhưng báo sớm ở đây thì
+			// chủ shop hiểu ngay vì sao thay vì đọc lỗi khó hiểu từ API.
+			if (new Date(publishAt).getTime() < Date.now() + 60_000) {
+				return data(
+					{ threadsError: "Giờ hẹn phải ở tương lai, cách hiện tại ít nhất 1 phút" },
+					{ status: 400 },
+				);
+			}
+		}
+
 		const result = await postProductToThreads(
 			env.DB,
 			env.IMAGES,
@@ -79,19 +129,23 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 			product,
 			{
 				caption: String(form.get("caption") ?? ""),
-				publishNow,
+				publishAt,
+				scheduledAtUtc,
 				shopUrl: new URL(request.url).origin,
 			},
 		);
 
 		if (!result.ok) return data({ threadsError: result.error }, { status: 400 });
 
-		return data({
-			threadsMessage: publishNow
-				? `Đã đăng lên Threads${result.mediaCount > 0 ? ` kèm ${result.mediaCount} ảnh` : ""}.`
-				: "Đã lưu bản nháp trên Typefully.",
-			threadsUrl: result.privateUrl,
-		});
+		const withMedia = result.mediaCount > 0 ? ` kèm ${result.mediaCount} ảnh` : "";
+		const message =
+			result.status === "scheduled"
+				? `Đã hẹn đăng lúc ${formatDateTime(result.scheduledAt)}${withMedia}. Typefully sẽ tự đăng đúng giờ.`
+				: result.status === "published"
+					? `Đã đăng lên Threads${withMedia}.`
+					: "Đã lưu bản nháp trên Typefully.";
+
+		return data({ threadsMessage: message, threadsUrl: result.privateUrl });
 	}
 
 	// --- Lưu sản phẩm ------------------------------------------------------
@@ -151,7 +205,11 @@ export default function ProductEdit({ loaderData, actionData }: Route.ComponentP
 							? "Sản phẩm đã lưu nhưng đăng Threads không thành công — xem lỗi ở mục Đăng lên Threads bên dưới."
 							: null
 				}
-				url={actionData && "threadsUrl" in actionData ? actionData.threadsUrl : null}
+				url={
+					actionData && "threadsUrl" in actionData
+						? (actionData.threadsUrl as string | null)
+						: null
+				}
 			/>
 
 			{(saved || justCreated) && (

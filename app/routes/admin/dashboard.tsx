@@ -22,6 +22,7 @@ import {
 	previousMonth,
 } from "~/lib/stats.server";
 import { formatDateTime, formatVnd } from "~/lib/format";
+import { getUpcomingPosts } from "~/lib/threads.server";
 import { TARGET_GROUPS, type TargetGroup } from "~/lib/types";
 
 export function meta() {
@@ -38,8 +39,16 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 	const range = monthRange(month);
 	const prevRange = monthRange(previousMonth(month));
 
-	const [stats, prevStats, revenueByDay, topProducts, byGroup, recentOrders, lowStock] =
-		await Promise.all([
+	const [
+		stats,
+		prevStats,
+		revenueByDay,
+		topProducts,
+		byGroup,
+		recentOrders,
+		lowStock,
+		upcomingPosts,
+	] = await Promise.all([
 			getPeriodStats(db, range.from, range.to),
 			getPeriodStats(db, prevRange.from, prevRange.to),
 			getRevenueByDay(db, range.from, range.to),
@@ -47,6 +56,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 			getRevenueByTargetGroup(db, range.from, range.to),
 			listOrders(db, { perPage: 8 }),
 			getLowStockVariants(db, 3, 8),
+			getUpcomingPosts(db, 5),
 		]);
 
 	return {
@@ -62,6 +72,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 		byGroup,
 		recentOrders: recentOrders.items,
 		lowStock,
+		upcomingPosts,
 	};
 }
 
@@ -75,6 +86,7 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
 		byGroup,
 		recentOrders,
 		lowStock,
+		upcomingPosts,
 	} = loaderData;
 
 	return (
@@ -143,6 +155,36 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
 										còn {variant.quantity}
 									</strong>
 								</Link>
+							</li>
+						))}
+					</ul>
+				</div>
+			)}
+
+			{upcomingPosts.length > 0 && (
+				<div className="card mt-4 border-blue-200 bg-blue-50/50 p-4">
+					<p className="font-medium text-blue-900">
+						{upcomingPosts.length} bài Threads đang chờ tới giờ đăng
+					</p>
+					<ul className="mt-2 space-y-1.5">
+						{upcomingPosts.map((post) => (
+							<li key={post.id} className="flex flex-wrap items-baseline gap-2 text-sm">
+								<span className="font-semibold text-blue-800">
+									{formatDateTime(post.scheduled_at)}
+								</span>
+								{post.product_id ? (
+									<Link
+										to={`/admin/san-pham/${post.product_id}`}
+										className="text-ink-700 hover:text-brand-600"
+									>
+										{post.product_name ?? "Sản phẩm đã xoá"}
+									</Link>
+								) : (
+									<span className="text-ink-500">Sản phẩm đã xoá</span>
+								)}
+								{post.media_count > 0 && (
+									<span className="text-xs text-ink-400">{post.media_count} ảnh</span>
+								)}
 							</li>
 						))}
 					</ul>

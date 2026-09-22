@@ -184,6 +184,10 @@ CREATE INDEX idx_order_items_order ON order_items(order_id);
   đăng được thẳng nhiều nền tảng trong một lần gọi.
 - **Bảng `social_posts`** ghi nhật ký từng lần đăng, để không đăng trùng và để
   lần lỗi còn dấu vết mà thử lại.
+- **Hẹn giờ đăng** (ngoài kế hoạch ban đầu): soạn bài hôm nay, hẹn đăng 10h sáng
+  mai. Không phải tự dựng hàng đợi vì Typefully nhận `publish_at` là mốc thời
+  gian và tự giữ bài. Thêm một cron 15 phút/lần chỉ để đồng bộ trạng thái về,
+  tiện thể trả kho cho đơn quá hạn kể cả khi cả đêm không ai vào web.
 
 ## 10. Việc còn cần quyết định
 - Tên shop / tên miền cụ thể

@@ -100,6 +100,52 @@ export function sqlNow(offsetMs = 0): string {
 	return new Date(Date.now() + offsetMs).toISOString().slice(0, 19).replace("T", " ");
 }
 
+// ---------------------------------------------------------------------------
+// Hẹn giờ theo giờ Việt Nam
+//
+// Ô <input type="datetime-local"> cho ra chuỗi "2026-09-23T10:00" không mang
+// thông tin múi giờ. Shop bán ở Việt Nam và mọi thời gian khác trong hệ thống
+// đều hiển thị theo giờ VN, nên chuỗi đó luôn được hiểu là giờ VN — kể cả khi
+// chủ shop đang ngồi ở múi giờ khác.
+// ---------------------------------------------------------------------------
+
+const VN_OFFSET = "+07:00";
+
+/** "2026-09-23T10:00" -> "2026-09-23T10:00:00+07:00" (gửi cho Typefully) */
+export function vnLocalToIso(local: string): string | null {
+	if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(local)) return null;
+	return `${local}:00${VN_OFFSET}`;
+}
+
+/** "2026-09-23T10:00" -> "2026-09-23 03:00:00" (UTC, để lưu vào D1) */
+export function vnLocalToSqlUtc(local: string): string | null {
+	const iso = vnLocalToIso(local);
+	if (!iso) return null;
+	const date = new Date(iso);
+	if (Number.isNaN(date.getTime())) return null;
+	return date.toISOString().slice(0, 19).replace("T", " ");
+}
+
+/**
+ * Giờ VN hiện tại (cộng thêm `offsetMinutes` nếu cần) ở dạng ô datetime-local
+ * nhận được: "YYYY-MM-DDTHH:mm".
+ */
+export function vnLocalInput(offsetMinutes = 0): string {
+	const vn = new Date(Date.now() + (7 * 60 + offsetMinutes) * 60_000);
+	return vn.toISOString().slice(0, 16);
+}
+
+/**
+ * Mốc giờ VN cho các nút gợi ý nhanh: `daysAhead` ngày nữa, vào đúng `hour` giờ.
+ * vd vnLocalAt(1, 10) = 10:00 sáng mai.
+ */
+export function vnLocalAt(daysAhead: number, hour: number): string {
+	const vn = new Date(Date.now() + 7 * 60 * 60_000);
+	vn.setUTCDate(vn.getUTCDate() + daysAhead);
+	vn.setUTCHours(hour, 0, 0, 0);
+	return vn.toISOString().slice(0, 16);
+}
+
 /**
  * Sinh slug từ tiếng Việt có dấu:
  *   "Đầm hoa nhí tay bồng" -> "dam-hoa-nhi-tay-bong"

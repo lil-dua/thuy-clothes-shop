@@ -59,7 +59,7 @@ export async function action({ request, context }: Route.ActionArgs) {
 				apiKey,
 				settings,
 				product,
-				{ publishNow: true, shopUrl: new URL(request.url).origin },
+				{ publishAt: "now", shopUrl: new URL(request.url).origin },
 			);
 			threads = posted.ok ? "posted" : "failed";
 		} else {
