@@ -90,36 +90,41 @@ Nếu chỉ muốn nạp lại dữ liệu mẫu mà giữ database, dùng `npm 
 
 ## Đưa lên Cloudflare
 
-Cần một tài khoản Cloudflare (miễn phí). Các bước chỉ làm một lần:
+Shop đang chạy tại **https://thuyshop.huuthom0209.workers.dev**
+
+Có hai đường deploy, cùng trỏ tới một Worker tên `thuyshop`:
+
+- **Tự động** — Cloudflare Workers Builds theo dõi nhánh `main` trên GitHub,
+  push lên là build và deploy.
+- **Thủ công** — `npm run deploy` từ máy.
+
+Tên Worker trong `wrangler.json` phải khớp tên project bên Cloudflare, nếu không
+`npm run deploy` sẽ tạo ra một Worker thứ hai và shop chạy song song ở hai nơi.
+
+### Dựng lại từ đầu trên một tài khoản khác
 
 ```bash
 npx wrangler login
 
-# 1. Tạo database và bucket ảnh
-npx wrangler d1 create lumi-shop-db
+npx wrangler d1 create lumi-shop-db          # chép database_id vào wrangler.json
 npx wrangler r2 bucket create lumi-shop-images
-```
 
-Lệnh `d1 create` in ra `database_id`. Dán giá trị đó vào `wrangler.json`, thay cho
-`PLACEHOLDER_CHAY_WRANGLER_D1_CREATE`.
-
-```bash
-# 2. Tạo bảng trên database thật
-npm run db:migrate:remote
-
-# 3. Tạo tài khoản quản trị trên database thật
-npm run admin:create -- thuy 'MatKhauManh!2026' 'Chị Thuý' --remote
-
-# 4. Deploy
+npm run db:migrate:remote                    # tạo bảng
+npm run db:seed-categories:remote            # danh mục + phí ship mặc định
+npm run admin:create -- <user> '<mật khẩu>' '<Tên>' --remote
 npm run deploy
 ```
 
-Sau khi deploy, vào **Cài đặt** trong trang quản trị để điền số tài khoản ngân
-hàng, số MoMo, phí vận chuyển — chưa điền thì phương thức thanh toán tương ứng
-sẽ tự ẩn ở trang thanh toán.
+R2 phải được **bật một lần trong dashboard** trước khi tạo bucket được — CLI báo
+`code: 10042` nếu chưa bật. Gói 10GB đầu miễn phí nhưng Cloudflare vẫn hỏi
+phương thức thanh toán.
 
-Ảnh minh hoạ `demo/*` chỉ dùng để xem thử; xoá dữ liệu mẫu và tải ảnh thật lên
-trong trang quản trị khi bắt đầu bán.
+Dùng `db:seed-categories` chứ đừng dùng `db:seed` cho shop thật: `db:seed` xoá
+sạch bảng và nhồi sản phẩm mẫu kèm số tài khoản giả.
+
+Sau khi deploy, vào **Cài đặt** trong trang quản trị điền số tài khoản ngân
+hàng, số MoMo, hotline — chưa điền thì phương thức thanh toán tương ứng tự ẩn ở
+trang thanh toán.
 
 ## Cấu trúc
 
@@ -221,8 +226,9 @@ hộ, chỉ để trang quản trị không hiển thị "Đã hẹn giờ" mãi
 Tiện thể cron cũng trả kho cho đơn quá hạn giữ chỗ — trước đây việc này chỉ chạy
 khi có người vào web, nên cả đêm không ai ghé là hàng bị giữ treo tới sáng.
 
-> Cron chỉ chạy được trên Cloudflare thật, không chạy ở `npm run dev`. Sau lần
-> deploy đầu, kiểm tra ở Cloudflare dashboard → Workers → lumi-shop → Triggers.
+> Cron không chạy ở `npm run dev`, chỉ chạy trên Cloudflare. Lần deploy vừa rồi
+> đã đăng ký `schedule: */15 * * * *`; xem lại ở dashboard → Workers → thuyshop
+> → Settings → Trigger Events.
 
 Mọi lần đăng đều ghi vào bảng `social_posts` — thành công hay thất bại, kèm
 caption và thông báo lỗi — nên lịch sử đăng luôn tra được ngay dưới khối đó.
