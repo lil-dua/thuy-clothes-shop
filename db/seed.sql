@@ -7,6 +7,7 @@
 -- để không có mật khẩu nào bị commit vào repo.
 -- ============================================================================
 
+DELETE FROM social_posts;
 DELETE FROM order_items;
 DELETE FROM orders;
 DELETE FROM product_reviews;
@@ -16,6 +17,8 @@ DELETE FROM products;
 DELETE FROM categories;
 DELETE FROM customers;
 DELETE FROM discount_codes;
+-- Cố ý KHÔNG xoá bảng settings: nạp lại dữ liệu mẫu không nên
+-- thổi bay API key và thông tin tài khoản nhận tiền chủ shop đã nhập.
 
 -- ---------------------------------------------------------------------------
 -- Danh mục — tách theo hai nhóm đối tượng chính của shop

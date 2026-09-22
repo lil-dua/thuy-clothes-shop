@@ -24,7 +24,25 @@ export interface ShopSettings {
 	/** Số phút giữ chỗ tồn kho cho đơn chuyển khoản/MoMo chưa thanh toán */
 	order_hold_minutes: string;
 	return_policy_days: string;
+	/** Tài khoản Typefully dùng để đăng bài — id lấy từ API, tên chỉ để hiển thị */
+	typefully_social_set_id: string;
+	typefully_social_set_name: string;
+	/** Mẫu caption sinh bài đăng Threads, xem THREADS_PLACEHOLDERS */
+	threads_caption_template: string;
+	/** '1' = tự đăng Threads ngay khi thêm sản phẩm mới */
+	threads_auto_post: string;
 }
+
+/** Mẫu caption mặc định — chủ shop sửa lại được trong trang Cài đặt */
+export const DEFAULT_CAPTION_TEMPLATE = `{ten}
+
+💰 {gia}
+📏 Size: {size}
+🎨 Màu: {mau}
+
+{mota}
+
+🛒 Đặt hàng: {link}`;
 
 export const DEFAULT_SETTINGS: ShopSettings = {
 	shop_name: "Lumi",
@@ -43,7 +61,20 @@ export const DEFAULT_SETTINGS: ShopSettings = {
 	free_shipping_threshold: "500000",
 	order_hold_minutes: "30",
 	return_policy_days: "7",
+	typefully_social_set_id: "",
+	typefully_social_set_name: "",
+	threads_caption_template: DEFAULT_CAPTION_TEMPLATE,
+	threads_auto_post: "0",
 };
+
+/**
+ * Khoá bí mật cũng nằm trong bảng `settings` nhưng CỐ Ý không có trong
+ * DEFAULT_SETTINGS. Nhờ vậy `getSettings` không bao giờ đọc ra chúng, và
+ * loader của trang Cài đặt không thể vô tình gửi API key xuống trình duyệt.
+ * Đọc/ghi phải đi qua getSecret / setSecret.
+ */
+export const SECRET_KEYS = ["typefully_api_key"] as const;
+export type SecretKey = (typeof SECRET_KEYS)[number];
 
 export async function getSettings(db: D1Database): Promise<ShopSettings> {
 	const { results } = await db
@@ -75,6 +106,57 @@ export async function updateSettings(
 		);
 	if (statements.length > 0) await db.batch(statements);
 }
+
+// ---------------------------------------------------------------------------
+// Khoá bí mật
+// ---------------------------------------------------------------------------
+
+/**
+ * Ưu tiên biến môi trường (Cloudflare secret) rồi mới tới bảng settings.
+ * Secret an toàn hơn, nhưng phải chạy `wrangler secret put` — nên vẫn để chủ
+ * shop dán khoá thẳng trong trang Cài đặt nếu muốn tự làm.
+ */
+export async function getSecret(
+	db: D1Database,
+	key: SecretKey,
+	env?: Record<string, unknown>,
+): Promise<string | null> {
+	const fromEnv = env?.[key.toUpperCase()];
+	if (typeof fromEnv === "string" && fromEnv.trim()) return fromEnv.trim();
+
+	const row = await db
+		.prepare(`SELECT value FROM settings WHERE key = ?1`)
+		.bind(key)
+		.first<{ value: string | null }>();
+	return row?.value?.trim() || null;
+}
+
+export async function setSecret(
+	db: D1Database,
+	key: SecretKey,
+	value: string,
+): Promise<void> {
+	await db
+		.prepare(
+			`INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, datetime('now'))
+			 ON CONFLICT(key) DO UPDATE SET value = ?2, updated_at = datetime('now')`,
+		)
+		.bind(key, value.trim())
+		.run();
+}
+
+/** Chỉ cho biết đã cấu hình hay chưa — không bao giờ trả về giá trị thật */
+export async function hasSecret(
+	db: D1Database,
+	key: SecretKey,
+	env?: Record<string, unknown>,
+): Promise<boolean> {
+	return (await getSecret(db, key, env)) !== null;
+}
+
+// ---------------------------------------------------------------------------
+// Vận chuyển & thanh toán
+// ---------------------------------------------------------------------------
 
 /** Phí vận chuyển áp dụng cho một giá trị đơn hàng cụ thể */
 export function shippingFeeFor(settings: ShopSettings, subtotal: number): number {

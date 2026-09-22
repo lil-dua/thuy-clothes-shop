@@ -168,12 +168,21 @@ async function shootAdmin() {
 		});
 	}
 
-	await capture(page, { file: "24-admin-don-hang", path: "/admin/don-hang" });
+	// Khối đăng Threads nằm cuối trang sửa sản phẩm, cuộn xuống mới thấy
+	if (productId) {
+		await capture(page, {
+			file: "24-admin-dang-threads",
+			path: `/admin/san-pham/${productId}`,
+			scrollToBottom: true,
+		});
+	}
+
+	await capture(page, { file: "25-admin-don-hang", path: "/admin/don-hang" });
 
 	const orderRef = await firstOrderRef(page);
 	if (orderRef) {
 		await capture(page, {
-			file: "25-admin-chi-tiet-don",
+			file: "26-admin-chi-tiet-don",
 			path: `/admin/don-hang/${orderRef.id}`,
 			full: true,
 		});
@@ -181,10 +190,10 @@ async function shootAdmin() {
 		console.log("  – chi tiết đơn (bỏ qua: chưa có đơn — chạy `npm run db:seed-orders`)");
 	}
 
-	await capture(page, { file: "26-admin-khach-hang", path: "/admin/khach-hang" });
-	await capture(page, { file: "27-admin-khuyen-mai", path: "/admin/khuyen-mai", full: true });
-	await capture(page, { file: "28-admin-bao-cao", path: "/admin/bao-cao", full: true });
-	await capture(page, { file: "29-admin-cai-dat", path: "/admin/cai-dat", full: true });
+	await capture(page, { file: "27-admin-khach-hang", path: "/admin/khach-hang" });
+	await capture(page, { file: "28-admin-khuyen-mai", path: "/admin/khuyen-mai", full: true });
+	await capture(page, { file: "29-admin-bao-cao", path: "/admin/bao-cao", full: true });
+	await capture(page, { file: "30-admin-cai-dat", path: "/admin/cai-dat", full: true });
 
 	await context.close();
 	return orderRef;
@@ -192,7 +201,7 @@ async function shootAdmin() {
 
 // ---------------------------------------------------------------------------
 
-async function capture(page, { file, path, full, scrollTo }) {
+async function capture(page, { file, path, full, scrollTo, scrollToBottom }) {
 	const response = await page.goto(`${BASE}${path}`, { waitUntil: "networkidle" });
 	if (!response?.ok()) {
 		console.log(`  – ${file} (bỏ qua: ${path} trả ${response?.status() ?? "lỗi mạng"})`);
@@ -200,12 +209,15 @@ async function capture(page, { file, path, full, scrollTo }) {
 	}
 	// Chờ webfont để chữ trong ảnh không bị nhảy sang font dự phòng
 	await page.evaluate(() => document.fonts.ready);
-	if (scrollTo) {
+	if (scrollToBottom) {
+		await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+	} else if (scrollTo) {
 		await page.evaluate((y) => window.scrollTo(0, y), scrollTo);
 	}
 	await page.waitForTimeout(350);
 	await page.screenshot({ path: `${OUT}/${file}.png`, fullPage: Boolean(full) });
-	console.log(`  ✓ ${file}.png  ${path}${scrollTo ? ` (cuộn ${scrollTo}px)` : ""}`);
+	const note = scrollToBottom ? " (cuộn cuối trang)" : scrollTo ? ` (cuộn ${scrollTo}px)` : "";
+	console.log(`  ✓ ${file}.png  ${path}${note}`);
 }
 
 /**

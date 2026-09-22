@@ -1,6 +1,6 @@
 # Dự án: Website quản lý tồn kho & bán quần áo
 
-> **Trạng thái (21/09/2026):** giai đoạn 1, 2 và 4 đã hoàn thành và chạy được ở
+> **Trạng thái (22/09/2026):** giai đoạn 1, 2, 3 và 4 đã hoàn thành và chạy được ở
 > local. Xem [README](../README.md) để biết cách chạy, deploy và những quyết định
 > kỹ thuật phát sinh. Schema thực tế đã mở rộng so với mục 4 dưới đây — bản đang
 > dùng nằm ở `db/migrations/0001_init.sql`.
@@ -151,7 +151,7 @@ CREATE INDEX idx_order_items_order ON order_items(order_id);
 - Trang admin: danh sách đơn, đánh dấu đã thanh toán/đã giao
 - Tự trừ tồn kho theo size khi tạo đơn
 
-**Giai đoạn 3 — Tự động đăng Threads (chiều xuôi)** ⬜ chưa làm
+**Giai đoạn 3 — Tự động đăng Threads (chiều xuôi)** ✅ xong
 - Nút "Đăng lên Threads" trong trang admin, đính kèm ảnh, qua Typefully
 
 **Giai đoạn 4 — Vận hành & tối ưu** ✅ xong (cảnh báo hết hàng, dashboard doanh thu/lợi nhuận, tra cứu đơn)
@@ -178,6 +178,12 @@ CREATE INDEX idx_order_items_order ON order_items(order_id);
   giỏ hàng.
 - **Framework**: React Router v7 chạy trên Cloudflare Workers, thay vì Pages +
   Workers tách rời — một lần deploy, một domain cho cả hai giao diện.
+- **Typefully đã lên API v2** (mục 6 viết theo v1). Endpoint đổi sang
+  `/v2/social-sets/{id}/drafts`, xác thực bằng `Authorization: Bearer`, và ảnh
+  phải qua ba bước riêng: xin chỗ chứa → PUT lên S3 → chờ xử lý xong. Bù lại v2
+  đăng được thẳng nhiều nền tảng trong một lần gọi.
+- **Bảng `social_posts`** ghi nhật ký từng lần đăng, để không đăng trùng và để
+  lần lỗi còn dấu vết mà thử lại.
 
 ## 10. Việc còn cần quyết định
 - Tên shop / tên miền cụ thể

@@ -1,4 +1,4 @@
-import { Form, data } from "react-router";
+import { Form, Link, data, redirect } from "react-router";
 import type { Route } from "./+types/settings";
 import { PageHeader } from "~/components/admin/ui";
 import { CheckIcon, TrashIcon, UploadIcon } from "~/components/icons";
@@ -7,7 +7,17 @@ import { getCategories } from "~/lib/db.server";
 import { slugify } from "~/lib/format";
 import { uploadProductImage } from "~/lib/images.server";
 import { IMAGE_PLACEHOLDER, imageUrl } from "~/lib/images";
-import { getSettings, updateSettings, type ShopSettings } from "~/lib/settings.server";
+import {
+	DEFAULT_CAPTION_TEMPLATE,
+	getSecret,
+	getSettings,
+	hasSecret,
+	setSecret,
+	updateSettings,
+	type ShopSettings,
+} from "~/lib/settings.server";
+import { listSocialSets } from "~/lib/threads.server";
+import { THREADS_PLACEHOLDERS, type SocialSet } from "~/lib/threads";
 import { TARGET_GROUPS, type TargetGroup } from "~/lib/types";
 
 export function meta() {
@@ -15,13 +25,29 @@ export function meta() {
 }
 
 export async function loader({ request, context }: Route.LoaderArgs) {
-	const db = context.cloudflare.env.DB;
+	const env = context.cloudflare.env;
+	const db = env.DB;
 	const [settings, categories, user] = await Promise.all([
 		getSettings(db),
 		getCategories(db),
 		requireAdmin(db, request),
 	]);
-	return { settings, categories, user };
+
+	const envRecord = env as unknown as Record<string, unknown>;
+	const apiKeySet = await hasSecret(db, "typefully_api_key", envRecord);
+
+	// Danh sách tài khoản Typefully chỉ nạp khi chủ shop bấm nút, vì mỗi lần nạp
+	// là một lượt gọi ra API bên ngoài — không nên chạy ở mọi lần mở trang.
+	let socialSets: SocialSet[] = [];
+	let socialSetsError: string | null = null;
+	if (apiKeySet && new URL(request.url).searchParams.has("tai-khoan")) {
+		const apiKey = await getSecret(db, "typefully_api_key", envRecord);
+		const result = await listSocialSets(apiKey!);
+		if (result.ok) socialSets = result.sets;
+		else socialSetsError = result.error;
+	}
+
+	return { settings, categories, user, apiKeySet, socialSets, socialSetsError };
 }
 
 export async function action({ request, context }: Route.ActionArgs) {
@@ -65,6 +91,39 @@ export async function action({ request, context }: Route.ActionArgs) {
 
 		await updateSettings(db, values);
 		return data({ message: "Đã lưu thông tin thanh toán" });
+	}
+
+	// --- Threads / Typefully ----------------------------------------------
+	if (intent === "threads-key") {
+		const key = String(form.get("typefully_api_key") ?? "").trim();
+		if (!key) return data({ error: "Vui lòng dán API key" }, { status: 400 });
+
+		// Kiểm tra khoá bằng một lượt gọi thật trước khi lưu, để chủ shop biết
+		// ngay là dán sai chứ không phải chờ tới lúc đăng bài mới lỗi.
+		const check = await listSocialSets(key);
+		if (!check.ok) return data({ error: check.error }, { status: 400 });
+
+		await setSecret(db, "typefully_api_key", key);
+		return redirect("/admin/cai-dat?tai-khoan=1#threads");
+	}
+
+	if (intent === "threads-account") {
+		const [id, ...nameParts] = String(form.get("socialSet") ?? "").split("|");
+		if (!id) return data({ error: "Chọn một tài khoản để đăng bài" }, { status: 400 });
+		await updateSettings(db, {
+			typefully_social_set_id: id,
+			typefully_social_set_name: nameParts.join("|"),
+		});
+		return data({ message: "Đã chọn tài khoản đăng bài" });
+	}
+
+	if (intent === "threads-template") {
+		await updateSettings(db, {
+			threads_caption_template:
+				String(form.get("threads_caption_template") ?? "").trim() || DEFAULT_CAPTION_TEMPLATE,
+			threads_auto_post: form.get("threads_auto_post") === "on" ? "1" : "0",
+		});
+		return data({ message: "Đã lưu mẫu caption" });
 	}
 
 	// --- Danh mục ----------------------------------------------------------
@@ -141,7 +200,7 @@ export async function action({ request, context }: Route.ActionArgs) {
 }
 
 export default function AdminSettings({ loaderData, actionData }: Route.ComponentProps) {
-	const { settings, categories } = loaderData;
+	const { settings, categories, apiKeySet, socialSets, socialSetsError } = loaderData;
 
 	return (
 		<>
@@ -359,6 +418,133 @@ export default function AdminSettings({ loaderData, actionData }: Route.Componen
 						cùng tên.
 					</p>
 				</Section>
+
+				{/* --- Threads / Typefully --------------------------------- */}
+				<section id="threads" className="card p-4 lg:p-5 xl:col-span-2">
+					<h2 className="font-semibold text-ink-900">Đăng bài Threads</h2>
+					<p className="mb-4 text-xs text-ink-400">
+						Đi qua Typefully nên không phải đăng ký Meta Developer app và chờ xét duyệt.
+						Lấy API key trong Typefully: Settings → API.
+					</p>
+
+					<div className="grid gap-5 lg:grid-cols-2">
+						<div className="space-y-5">
+							<Form method="post" className="space-y-3">
+								<input type="hidden" name="intent" value="threads-key" />
+								<div>
+									<label htmlFor="typefully_api_key" className="field-label">
+										API key Typefully
+									</label>
+									<input
+										id="typefully_api_key"
+										name="typefully_api_key"
+										type="password"
+										autoComplete="off"
+										placeholder={apiKeySet ? "Đã lưu — dán khoá mới để thay" : "Dán API key vào đây"}
+										className="field"
+									/>
+									<p className="mt-1 text-xs text-ink-400">
+										{apiKeySet
+											? "Khoá đã lưu và không bao giờ hiển thị lại."
+											: "Khoá được kiểm tra với Typefully trước khi lưu."}
+									</p>
+								</div>
+								<button type="submit" className="btn-primary btn-md">
+									{apiKeySet ? "Thay khoá" : "Kiểm tra & lưu khoá"}
+								</button>
+							</Form>
+
+							{apiKeySet && (
+								<div className="border-t border-ink-100 pt-4">
+									<span className="field-label">Tài khoản đăng bài</span>
+									{settings.typefully_social_set_name && (
+										<p className="mb-2 flex items-center gap-1.5 text-sm text-ink-700">
+											<CheckIcon className="h-4 w-4 text-green-600" />
+											{settings.typefully_social_set_name}
+										</p>
+									)}
+
+									{socialSetsError && (
+										<p className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+											{socialSetsError}
+										</p>
+									)}
+
+									{socialSets.length > 0 ? (
+										<Form method="post" className="flex flex-wrap gap-2">
+											<input type="hidden" name="intent" value="threads-account" />
+											<select name="socialSet" className="field !w-auto !py-2 text-sm">
+												{socialSets.map((set) => (
+													<option key={set.id} value={`${set.id}|${set.name || set.username}`}>
+														{set.name || set.username} (@{set.username})
+													</option>
+												))}
+											</select>
+											<button type="submit" className="btn-outline btn-md">
+												Chọn
+											</button>
+										</Form>
+									) : (
+										<Link to="?tai-khoan=1#threads" className="btn-outline btn-sm">
+											Nạp danh sách tài khoản
+										</Link>
+									)}
+								</div>
+							)}
+						</div>
+
+						<Form method="post" className="space-y-3">
+							<input type="hidden" name="intent" value="threads-template" />
+							<div>
+								<label htmlFor="threads_caption_template" className="field-label">
+									Mẫu caption
+								</label>
+								<textarea
+									id="threads_caption_template"
+									name="threads_caption_template"
+									rows={9}
+									defaultValue={settings.threads_caption_template}
+									className="field font-mono text-sm"
+								/>
+								<p className="mt-1.5 text-xs text-ink-400">
+									Ô trống sẽ tự biến mất khỏi bài đăng. Các từ khoá thay được:
+								</p>
+								<div className="mt-1.5 flex flex-wrap gap-1.5">
+									{THREADS_PLACEHOLDERS.map((item) => (
+										<span
+											key={item.token}
+											title={item.label}
+											className="rounded-md bg-ink-100 px-1.5 py-0.5 font-mono text-[11px] text-ink-600"
+										>
+											{item.token}
+										</span>
+									))}
+								</div>
+							</div>
+
+							<label className="flex items-start gap-2.5">
+								<input
+									type="checkbox"
+									name="threads_auto_post"
+									defaultChecked={settings.threads_auto_post === "1"}
+									className="mt-0.5 h-4.5 w-4.5 accent-brand-500"
+								/>
+								<span className="text-sm">
+									<span className="block font-medium text-ink-800">
+										Tự đăng khi thêm sản phẩm mới
+									</span>
+									<span className="block text-xs text-ink-400">
+										Sản phẩm vừa tạo sẽ lên Threads ngay, không cần bấm thêm
+									</span>
+								</span>
+							</label>
+
+							<button type="submit" className="btn-primary btn-md">
+								Lưu mẫu caption
+							</button>
+						</Form>
+					</div>
+				</section>
 
 				{/* --- Mật khẩu -------------------------------------------- */}
 				<Section title="Đổi mật khẩu">
