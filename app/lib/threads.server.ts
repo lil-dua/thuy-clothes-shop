@@ -10,11 +10,16 @@
 
 import { formatVnd } from "./format";
 import type { ShopSettings } from "./settings.server";
-import { THREADS_PLACEHOLDERS, type SocialPost, type SocialSet } from "./threads";
+import {
+	THREADS_PLACEHOLDERS,
+	type SocialPost,
+	type SocialPostStatus,
+	type SocialSet,
+} from "./threads";
 import type { ProductDetail } from "./types";
 
 export { THREADS_PLACEHOLDERS };
-export type { SocialPost, SocialSet };
+export type { SocialPost, SocialPostStatus, SocialSet };
 
 const API = "https://api.typefully.com/v2";
 
@@ -25,7 +30,15 @@ const MAX_MEDIA = 4;
 const MEDIA_POLL_ATTEMPTS = 12;
 
 export type ThreadsResult =
-	| { ok: true; draftId: string; caption: string; mediaCount: number; privateUrl: string | null }
+	| {
+			ok: true;
+			draftId: string;
+			caption: string;
+			mediaCount: number;
+			privateUrl: string | null;
+			status: SocialPostStatus;
+			scheduledAt: string | null;
+	  }
 	| { ok: false; error: string };
 
 // ---------------------------------------------------------------------------
@@ -189,7 +202,7 @@ interface DraftResponse {
 async function createThreadsDraft(
 	apiKey: string,
 	socialSetId: string,
-	{ text, mediaIds, publishNow }: { text: string; mediaIds: string[]; publishNow: boolean },
+	{ text, mediaIds, publishAt }: { text: string; mediaIds: string[]; publishAt: string | null },
 ) {
 	return call<DraftResponse>(apiKey, `/social-sets/${socialSetId}/drafts`, {
 		method: "POST",
@@ -207,9 +220,10 @@ async function createThreadsDraft(
 				},
 			},
 			draft_title: text.split("\n")[0]?.slice(0, 80),
-			// Không truyền publish_at thì bài nằm lại ở mục nháp trên Typefully,
-			// chủ shop tự bấm đăng — hữu ích khi muốn xem lại trước khi lên sóng.
-			...(publishNow && { publish_at: "now" }),
+			// "now" = đăng ngay; chuỗi ISO có múi giờ = hẹn giờ, Typefully tự giữ
+			// bài tới đúng mốc đó. Không truyền gì thì bài nằm lại ở mục nháp để
+			// chủ shop tự xem lại rồi bấm đăng.
+			...(publishAt && { publish_at: publishAt }),
 		}),
 	});
 }
@@ -221,8 +235,15 @@ async function createThreadsDraft(
 export interface PostProductOptions {
 	/** Caption đã được chủ shop sửa tay; bỏ trống thì sinh từ mẫu */
 	caption?: string | null;
-	/** false = chỉ tạo bản nháp trên Typefully, không đăng ngay */
-	publishNow?: boolean;
+	/**
+	 * Khi nào đăng:
+	 *   "now"            — đăng ngay
+	 *   chuỗi ISO có múi giờ — hẹn giờ, Typefully giữ bài tới đúng mốc đó
+	 *   null             — chỉ lưu nháp trên Typefully
+	 */
+	publishAt: string | null;
+	/** Mốc hẹn giờ ở dạng UTC để lưu vào D1 (chỉ dùng khi hẹn giờ) */
+	scheduledAtUtc?: string | null;
 	/** Địa chỉ gốc của shop, dùng dựng link sản phẩm trong caption */
 	shopUrl: string;
 }
@@ -273,7 +294,7 @@ export async function postProductToThreads(
 	const draft = await createThreadsDraft(apiKey, socialSetId, {
 		text: caption,
 		mediaIds,
-		publishNow: options.publishNow !== false,
+		publishAt: options.publishAt,
 	});
 
 	if (!draft.ok) {
@@ -289,11 +310,20 @@ export async function postProductToThreads(
 	}
 
 	const draftId = String(draft.data.id);
+	const status: SocialPostStatus =
+		options.publishAt === null
+			? "draft"
+			: options.publishAt === "now"
+				? "published"
+				: "scheduled";
+	const scheduledAt = status === "scheduled" ? (options.scheduledAtUtc ?? null) : null;
+
 	await logPost(db, product.id, {
-		status: options.publishNow === false ? "publishing" : "published",
+		status,
 		caption,
 		mediaCount: mediaIds.length,
 		draftId,
+		scheduledAt,
 		publishedUrl: draft.data.threads_published_url ?? draft.data.private_url,
 		error: imageErrors.length > 0 ? dedupe(imageErrors) : null,
 	});
@@ -304,6 +334,8 @@ export async function postProductToThreads(
 		caption,
 		mediaCount: mediaIds.length,
 		privateUrl: draft.data.private_url,
+		status,
+		scheduledAt,
 	};
 }
 
@@ -316,10 +348,11 @@ async function logPost(
 	db: D1Database,
 	productId: number,
 	entry: {
-		status: "publishing" | "published" | "failed";
+		status: SocialPostStatus;
 		caption: string;
 		mediaCount: number;
 		draftId?: string;
+		scheduledAt?: string | null;
 		publishedUrl?: string | null;
 		error?: string | null;
 	},
@@ -327,8 +360,9 @@ async function logPost(
 	await db
 		.prepare(
 			`INSERT INTO social_posts
-			   (product_id, platform, draft_id, status, caption, media_count, published_url, error)
-			 VALUES (?1, 'threads', ?2, ?3, ?4, ?5, ?6, ?7)`,
+			   (product_id, platform, draft_id, status, caption, media_count,
+			    scheduled_at, published_url, error)
+			 VALUES (?1, 'threads', ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
 		)
 		.bind(
 			productId,
@@ -336,6 +370,7 @@ async function logPost(
 			entry.status,
 			entry.caption,
 			entry.mediaCount,
+			entry.scheduledAt ?? null,
 			entry.publishedUrl ?? null,
 			entry.error ?? null,
 		)
@@ -350,7 +385,7 @@ export async function getProductPosts(
 	const { results } = await db
 		.prepare(
 			`SELECT id, product_id, draft_id, status, caption, media_count,
-			        published_url, error, created_at
+			        scheduled_at, published_url, error, created_at
 			 FROM social_posts WHERE product_id = ?1
 			 ORDER BY created_at DESC, id DESC LIMIT ?2`,
 		)
@@ -364,8 +399,164 @@ export async function getPostedProductIds(db: D1Database): Promise<Set<number>> 
 	const { results } = await db
 		.prepare(
 			`SELECT DISTINCT product_id FROM social_posts
-			 WHERE status IN ('published', 'publishing') AND product_id IS NOT NULL`,
+			 WHERE status IN ('published', 'publishing', 'scheduled')
+			   AND product_id IS NOT NULL`,
 		)
 		.all<{ product_id: number }>();
 	return new Set((results ?? []).map((row) => row.product_id));
+}
+
+// ---------------------------------------------------------------------------
+// Huỷ bài đã hẹn giờ
+// ---------------------------------------------------------------------------
+
+/**
+ * Huỷ một bài chưa đăng: xoá bản nháp bên Typefully rồi đánh dấu 'cancelled'.
+ *
+ * Nếu Typefully trả 404 thì bản nháp đã biến mất sẵn (chủ shop tự xoá bên đó),
+ * vẫn coi là huỷ thành công — cốt để hai bên khớp nhau, không phải để bắt lỗi.
+ */
+export async function cancelScheduledPost(
+	db: D1Database,
+	apiKey: string,
+	settings: ShopSettings,
+	postId: number,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+	const post = await db
+		.prepare(
+			`SELECT id, draft_id, status FROM social_posts WHERE id = ?1`,
+		)
+		.bind(postId)
+		.first<{ id: number; draft_id: string | null; status: SocialPostStatus }>();
+
+	if (!post) return { ok: false, error: "Không tìm thấy bài đăng" };
+	if (post.status !== "scheduled" && post.status !== "draft") {
+		return { ok: false, error: "Chỉ huỷ được bài chưa đăng" };
+	}
+
+	if (post.draft_id && settings.typefully_social_set_id) {
+		const deleted = await call<unknown>(
+			apiKey,
+			`/social-sets/${settings.typefully_social_set_id}/drafts/${post.draft_id}`,
+			{ method: "DELETE" },
+		);
+		if (!deleted.ok && !deleted.error.includes("404")) return deleted;
+	}
+
+	await db
+		.prepare(
+			`UPDATE social_posts SET status = 'cancelled', updated_at = datetime('now')
+			 WHERE id = ?1`,
+		)
+		.bind(postId)
+		.run();
+
+	return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Đồng bộ trạng thái bài đã hẹn giờ
+// ---------------------------------------------------------------------------
+
+/** Trạng thái Typefully -> trạng thái trong DB của mình */
+const REMOTE_STATUS: Record<string, SocialPostStatus> = {
+	draft: "draft",
+	planned: "draft",
+	scheduled: "scheduled",
+	publishing: "publishing",
+	published: "published",
+	error: "failed",
+};
+
+/**
+ * Hỏi lại Typefully xem các bài đã tới giờ đăng ra sao, rồi cập nhật lại DB.
+ *
+ * Việc đăng do Typefully lo — hàm này chỉ để trang quản trị hiển thị đúng,
+ * nếu không bài đã lên sóng vẫn nằm đó với nhãn "Đã hẹn giờ" mãi mãi.
+ * Gọi từ cron (xem workers/app.ts) và mỗi lần mở trang sửa sản phẩm.
+ */
+export async function syncScheduledPosts(
+	db: D1Database,
+	apiKey: string,
+	settings: ShopSettings,
+	{ limit = 20 } = {},
+): Promise<number> {
+	const socialSetId = settings.typefully_social_set_id;
+	if (!socialSetId) return 0;
+
+	const { results } = await db
+		.prepare(
+			`SELECT id, draft_id FROM social_posts
+			 WHERE status IN ('scheduled', 'publishing')
+			   AND draft_id IS NOT NULL
+			   AND (scheduled_at IS NULL OR scheduled_at <= datetime('now'))
+			 ORDER BY scheduled_at LIMIT ?1`,
+		)
+		.bind(limit)
+		.all<{ id: number; draft_id: string }>();
+
+	const due = results ?? [];
+	let updated = 0;
+
+	for (const post of due) {
+		const remote = await call<{
+			status: string;
+			threads_published_url: string | null;
+			private_url: string | null;
+		}>(apiKey, `/social-sets/${socialSetId}/drafts/${post.draft_id}`);
+
+		if (!remote.ok) {
+			// Bản nháp bị xoá bên Typefully thì bên mình cũng không chờ nữa
+			if (remote.error.includes("404")) {
+				await db
+					.prepare(
+						`UPDATE social_posts SET status = 'cancelled',
+						   error = 'Bản nháp đã bị xoá trên Typefully',
+						   updated_at = datetime('now')
+						 WHERE id = ?1`,
+					)
+					.bind(post.id)
+					.run();
+				updated++;
+			}
+			continue;
+		}
+
+		const status = REMOTE_STATUS[remote.data.status] ?? "scheduled";
+		await db
+			.prepare(
+				`UPDATE social_posts SET status = ?2, published_url = COALESCE(?3, published_url),
+				   updated_at = datetime('now')
+				 WHERE id = ?1`,
+			)
+			.bind(
+				post.id,
+				status,
+				remote.data.threads_published_url ?? remote.data.private_url ?? null,
+			)
+			.run();
+		updated++;
+	}
+
+	return updated;
+}
+
+/** Bài đang chờ tới giờ đăng — hiện ở trang Tổng quan */
+export async function getUpcomingPosts(
+	db: D1Database,
+	limit = 5,
+): Promise<(SocialPost & { product_name: string | null; product_slug: string | null })[]> {
+	const { results } = await db
+		.prepare(
+			`SELECT s.id, s.product_id, s.draft_id, s.status, s.caption, s.media_count,
+			        s.scheduled_at, s.published_url, s.error, s.created_at,
+			        p.name AS product_name, p.slug AS product_slug
+			 FROM social_posts s
+			 LEFT JOIN products p ON p.id = s.product_id
+			 WHERE s.status = 'scheduled'
+			 ORDER BY s.scheduled_at LIMIT ?1`,
+		)
+		.bind(limit)
+		.all<SocialPost & { product_name: string | null; product_slug: string | null }>();
+	return results ?? [];
 }

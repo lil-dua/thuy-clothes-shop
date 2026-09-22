@@ -168,11 +168,17 @@ async function shootAdmin() {
 		});
 	}
 
-	// Khối đăng Threads nằm cuối trang sửa sản phẩm, cuộn xuống mới thấy
-	if (productId) {
+	// Khối đăng Threads nằm cuối trang sửa sản phẩm, cuộn xuống mới thấy.
+	// Ảnh chụp sản phẩm đã có lịch sử đăng để thấy cả phần hẹn giờ lẫn lịch sử.
+	const threadsProductId = await firstIdFrom(
+		page,
+		"/admin/san-pham",
+		"/admin/san-pham/",
+	);
+	if (threadsProductId) {
 		await capture(page, {
 			file: "24-admin-dang-threads",
-			path: `/admin/san-pham/${productId}`,
+			path: `/admin/san-pham/${threadsProductId}`,
 			scrollToBottom: true,
 		});
 	}
