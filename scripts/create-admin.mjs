@@ -22,13 +22,22 @@ const ITERATIONS = 100_000;
 const args = process.argv.slice(2);
 const remote = args.includes("--remote");
 const positional = args.filter((value) => !value.startsWith("--"));
-const [username, password, displayName] = positional;
+const [username, passwordArg, displayName] = positional;
+
+// Tham số dòng lệnh hiện ra trong `ps` với mọi tiến trình trên máy, nên với
+// mật khẩu thật thì truyền qua ADMIN_PASSWORD an toàn hơn:
+//   ADMIN_PASSWORD='...' node scripts/create-admin.mjs thuy --remote
+const password = process.env.ADMIN_PASSWORD || passwordArg;
 
 if (!username || !password) {
 	console.error(
 		`Thiếu tham số.
 
   node scripts/create-admin.mjs <tên-đăng-nhập> <mật-khẩu> ["Tên hiển thị"] [--remote]
+
+Hoặc truyền mật khẩu qua biến môi trường để nó không lọt vào \`ps\` và lịch sử shell:
+
+  ADMIN_PASSWORD='...' node scripts/create-admin.mjs thuy "Chị Thuý" --remote
 
 Ví dụ:
   node scripts/create-admin.mjs thuy 'MatKhauManh!2026' 'Chị Thuý'`,
@@ -43,7 +52,8 @@ if (password.length < 8) {
 
 const hash = await hashPassword(password);
 const user = username.trim().toLowerCase();
-const name = displayName?.trim() || username;
+// Dùng ADMIN_PASSWORD thì không còn tham số mật khẩu, nên tên hiển thị lùi lên một vị trí
+const name = (process.env.ADMIN_PASSWORD ? passwordArg : displayName)?.trim() || username;
 
 // Dùng tệp .sql tạm thay vì --command để mật khẩu băm không lọt vào
 // lịch sử lệnh của shell.
