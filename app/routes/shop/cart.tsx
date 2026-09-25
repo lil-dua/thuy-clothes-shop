@@ -11,7 +11,7 @@ import {
 	serializeDiscountCode,
 	setLineQuantity,
 } from "~/lib/cart.server";
-import { validateDiscountCode } from "~/lib/order.server";
+import { releaseExpiredOrders, validateDiscountCode } from "~/lib/order.server";
 import { getSettings, shippingFeeFor } from "~/lib/settings.server";
 import { formatVnd } from "~/lib/format";
 import { IMAGE_PLACEHOLDER, imageUrl } from "~/lib/images";
@@ -22,6 +22,11 @@ export function meta() {
 
 export async function loader({ request, context }: Route.LoaderArgs) {
 	const db = context.cloudflare.env.DB;
+
+	// Trả kho cho đơn quá hạn giữ chỗ TRƯỚC khi đọc tồn, nếu không giỏ hàng có
+	// thể báo "chỉ còn 1 sản phẩm" trong khi hàng đã được trả về kho từ lâu.
+	await releaseExpiredOrders(db);
+
 	const lines = await readCart(request);
 	const [{ items, removed }, settings, discountCode] = await Promise.all([
 		loadCartDetails(db, lines),
