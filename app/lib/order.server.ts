@@ -295,7 +295,7 @@ export async function releaseExpiredOrders(db: D1Database): Promise<number> {
 	return expired.length;
 }
 
-/** Các câu lệnh hoàn kho + trừ lượt bán cho một đơn bị huỷ */
+/** Các câu lệnh hoàn kho, trừ lượt bán và trả lại lượt dùng mã cho đơn bị huỷ */
 function restoreStockStatements(db: D1Database, orderId: number): D1PreparedStatement[] {
 	return [
 		db
@@ -316,6 +316,20 @@ function restoreStockStatements(db: D1Database, orderId: number): D1PreparedStat
 				   WHERE oi.order_id = ?1 AND oi.product_id = products.id
 				 ))
 				 WHERE id IN (SELECT product_id FROM order_items WHERE order_id = ?1)`,
+			)
+			.bind(orderId),
+		// Trả lại lượt dùng mã giảm giá. Thiếu câu này thì mã giới hạn lượt sẽ bị
+		// đốt dần bởi những đơn không bao giờ thành: đơn chuyển khoản bỏ dở tự huỷ
+		// sau 30 phút vẫn giữ nguyên một lượt, tới lúc hết lượt thì khách thật
+		// không dùng được mã nữa mà chủ shop không hiểu vì sao.
+		db
+			.prepare(
+				`UPDATE discount_codes
+				 SET used_count = MAX(0, used_count - 1)
+				 WHERE code = (
+				   SELECT discount_code FROM orders
+				   WHERE id = ?1 AND discount_code IS NOT NULL
+				 )`,
 			)
 			.bind(orderId),
 	];

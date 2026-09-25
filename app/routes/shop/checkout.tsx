@@ -46,6 +46,10 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 		subtotal,
 		discountAmount,
 		discountCode: discount?.ok ? discountCode : null,
+		// Mã đang giữ trong cookie có thể mất hiệu lực khi giỏ thay đổi (tụt dưới
+		// mức đơn tối thiểu, hết lượt, hết hạn). Nói rõ lý do thay vì để nó lặng
+		// lẽ biến mất khỏi phần tính tiền.
+		discountError: discount && !discount.ok ? discount.error : null,
 		shippingFee,
 		total: Math.max(0, subtotal - discountAmount + shippingFee),
 		// Chỉ hiện phương thức đã được cấu hình đủ thông tin nhận tiền
@@ -57,7 +61,33 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 export async function action({ request, context }: Route.ActionArgs) {
 	const db = context.cloudflare.env.DB;
 	const form = await request.formData();
+	const intent = String(form.get("intent") ?? "order");
 
+	// --- Áp / bỏ mã giảm giá ----------------------------------------------
+	// Mã lưu ở cookie riêng nên áp ở giỏ hàng hay ở đây đều như nhau.
+	if (intent === "remove-discount") {
+		return redirect("/thanh-toan", {
+			headers: { "Set-Cookie": await serializeDiscountCode(null) },
+		});
+	}
+
+	if (intent === "discount") {
+		const code = String(form.get("code") ?? "").trim();
+		const lines = await readCart(request);
+		const { items } = await loadCartDetails(db, lines);
+		const check = await validateDiscountCode(db, code, cartSubtotal(items));
+
+		if (!check.ok) {
+			const failure: Record<string, string> = { discount: check.error };
+			return data({ errors: failure }, { status: 400 });
+		}
+
+		return redirect("/thanh-toan", {
+			headers: { "Set-Cookie": await serializeDiscountCode(check.code.code) },
+		});
+	}
+
+	// --- Đặt hàng ----------------------------------------------------------
 	const customerName = String(form.get("customerName") ?? "").trim();
 	const rawPhone = String(form.get("customerPhone") ?? "").trim();
 	const customerAddress = String(form.get("customerAddress") ?? "").trim();
@@ -118,6 +148,7 @@ export default function Checkout({ loaderData, actionData }: Route.ComponentProp
 		hasMomoInfo,
 	} = loaderData;
 	const errors = actionData?.errors ?? {};
+	const discountError = errors.discount ?? loaderData.discountError;
 	const navigation = useNavigation();
 	const submitting = navigation.state === "submitting";
 
@@ -141,8 +172,9 @@ export default function Checkout({ loaderData, actionData }: Route.ComponentProp
 				</p>
 			)}
 
-			<Form method="post" className="md:grid md:grid-cols-[1fr_20rem] md:items-start md:gap-6">
-				<div className="space-y-6">
+			<div className="md:grid md:grid-cols-[1fr_20rem] md:items-start md:gap-6">
+				<Form id="checkout-form" method="post" className="space-y-6">
+					<input type="hidden" name="intent" value="order" />
 					<section className="card p-4 md:p-5">
 						<h2 className="mb-4 font-semibold text-ink-900">Địa chỉ giao hàng</h2>
 						<div className="space-y-4">
@@ -230,7 +262,7 @@ export default function Checkout({ loaderData, actionData }: Route.ComponentProp
 							toán.
 						</p>
 					</section>
-				</div>
+				</Form>
 
 				{/* Tóm tắt đơn hàng */}
 				<aside className="mt-5 md:sticky md:top-20 md:mt-0">
@@ -262,6 +294,45 @@ export default function Checkout({ loaderData, actionData }: Route.ComponentProp
 							))}
 						</ul>
 
+						{/* Ô nhập mã phải có ở đây, không chỉ ở giỏ hàng: nút "Mua ngay" ở
+						    trang sản phẩm đi thẳng tới đây và bỏ qua giỏ hàng. */}
+						<div className="mt-4 border-t border-ink-100 pt-4">
+							{discountCode ? (
+								<div className="flex items-center justify-between gap-2 rounded-lg bg-green-50 px-3 py-2">
+									<span className="text-sm text-green-800">
+										Đang dùng mã <strong>{discountCode}</strong>
+									</span>
+									<Form method="post">
+										<input type="hidden" name="intent" value="remove-discount" />
+										<button type="submit" className="text-xs text-ink-500 hover:text-red-600">
+											Bỏ mã
+										</button>
+									</Form>
+								</div>
+							) : (
+								<Form method="post">
+									<input type="hidden" name="intent" value="discount" />
+									<label htmlFor="code" className="field-label">
+										Mã giảm giá
+									</label>
+									<div className="flex gap-2">
+										<input
+											id="code"
+											name="code"
+											placeholder="Nhập mã giảm giá"
+											className="field !py-2 text-sm"
+										/>
+										<button type="submit" className="btn-outline btn-md shrink-0">
+											Áp dụng
+										</button>
+									</div>
+								</Form>
+							)}
+							{discountError && (
+								<p className="mt-1.5 text-xs text-red-600">{discountError}</p>
+							)}
+						</div>
+
 						<dl className="mt-4 space-y-2 border-t border-ink-100 pt-4 text-sm">
 							<div className="flex justify-between">
 								<dt className="text-ink-500">Tổng tiền hàng</dt>
@@ -287,6 +358,7 @@ export default function Checkout({ loaderData, actionData }: Route.ComponentProp
 
 						<button
 							type="submit"
+							form="checkout-form"
 							disabled={submitting}
 							className="btn-primary btn-lg mt-4 w-full"
 						>
@@ -300,7 +372,7 @@ export default function Checkout({ loaderData, actionData }: Route.ComponentProp
 						</Link>
 					</div>
 				</aside>
-			</Form>
+			</div>
 		</div>
 	);
 }

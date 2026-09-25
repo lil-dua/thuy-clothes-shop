@@ -43,7 +43,7 @@
 		"typegen": "wrangler types && react-router typegen",
 		"cf-typegen": "wrangler types && react-router typegen",
 		"check": "npm run typegen && tsc -b && react-router build && wrangler deploy --dry-run",
-		"db:migrate": "wrangler d1 migrations apply lumi-shop-db --local",
+		"db:migrate": "CI=1 wrangler d1 migrations apply lumi-shop-db --local",
 		"db:migrate:remote": "wrangler d1 migrations apply lumi-shop-db --remote",
 		"db:seed": "wrangler d1 execute lumi-shop-db --local --file db/seed.sql --yes && node scripts/seed-images.mjs",
 		"db:seed-orders": "node scripts/seed-orders.mjs",
