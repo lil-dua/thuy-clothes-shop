@@ -122,13 +122,43 @@ async function call<T>(
 		if (response.status === 401 || response.status === 403) {
 			return { ok: false, error: "API key Typefully không hợp lệ hoặc đã bị thu hồi" };
 		}
-		return {
-			ok: false,
-			error: `Typefully trả lỗi ${response.status}: ${body.slice(0, 300) || response.statusText}`,
-		};
+		return { ok: false, error: describeApiError(response, body) };
 	}
 
 	return { ok: true, data: (await response.json()) as T };
+}
+
+/**
+ * Biến lỗi của Typefully thành câu đọc được.
+ *
+ * Lỗi 422 trả về dạng:
+ *   {"error": {"code": "VALIDATION_ERROR", "message": "...",
+ *              "details": [{"field": "platforms.threads.enabled", "message": "Field required"}]}}
+ * Đổ nguyên khối JSON đó lên màn hình thì chủ shop không hiểu gì, mà lập trình
+ * viên cũng phải soi từng ký tự — nên rút gọn còn field + message.
+ */
+function describeApiError(response: Response, body: string): string {
+	try {
+		const parsed = JSON.parse(body) as {
+			error?: {
+				message?: string;
+				details?: { field?: string; message?: string }[];
+			};
+		};
+		const details = parsed.error?.details
+			?.map((detail) => [detail.field, detail.message].filter(Boolean).join(": "))
+			.filter(Boolean);
+
+		if (details?.length) {
+			return `Typefully từ chối bài đăng (${response.status}): ${details.join(" | ")}`;
+		}
+		if (parsed.error?.message) {
+			return `Typefully trả lỗi ${response.status}: ${parsed.error.message}`;
+		}
+	} catch {
+		// Không phải JSON thì rơi xuống dùng nguyên văn bên dưới
+	}
+	return `Typefully trả lỗi ${response.status}: ${body.slice(0, 300) || response.statusText}`;
 }
 
 /** Danh sách tài khoản mạng xã hội gắn với API key — để chủ shop chọn trong Cài đặt */
@@ -209,6 +239,9 @@ async function createThreadsDraft(
 		body: JSON.stringify({
 			platforms: {
 				threads: {
+					// Bắt buộc, dù trang docs chi tiết không nhắc tới. Thiếu nó thì
+					// API trả 422 "platforms.threads.enabled — Field required".
+					enabled: true,
 					posts: [
 						{
 							text,
