@@ -16,6 +16,11 @@ import {
 export default [
 	// --- Tài nguyên: ảnh sản phẩm đọc từ R2 -------------------------------
 	route("anh/*", "routes/anh.ts"),
+	route("anh-mac-dinh/:kind", "routes/anh-mac-dinh.ts"),
+
+	// --- SEO ---------------------------------------------------------------
+	route("robots.txt", "routes/robots.ts"),
+	route("sitemap.xml", "routes/sitemap.ts"),
 
 	// --- Thao tác giỏ hàng (resource route, không render UI) ---------------
 	route("api/gio-hang", "routes/api.cart.ts"),

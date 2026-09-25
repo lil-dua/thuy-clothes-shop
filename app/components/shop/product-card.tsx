@@ -1,6 +1,6 @@
 import { Link } from "react-router";
 import { formatVnd, cn } from "~/lib/format";
-import { IMAGE_PLACEHOLDER, imageUrl } from "~/lib/images";
+import { imageUrl, placeholderFor } from "~/lib/images";
 import type { ProductListItem } from "~/lib/types";
 
 /**
@@ -8,7 +8,9 @@ import type { ProductListItem } from "~/lib/types";
  * Ảnh khung 4:5 cố định để lưới không bị "nhảy" khi ảnh tải xong (tránh CLS).
  */
 export function ProductCard({ product }: { product: ProductListItem }) {
-	const src = imageUrl(product.image_key) ?? IMAGE_PLACEHOLDER;
+	const src =
+		imageUrl(product.image_key) ??
+		placeholderFor(product.category_slug, product.target_group);
 	const soldOut = product.total_stock <= 0;
 	const discountPercent =
 		product.compare_price && product.compare_price > product.sale_price

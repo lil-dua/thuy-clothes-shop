@@ -16,7 +16,7 @@ import { getProductBySlug, getProductReviews, getRelatedProducts } from "~/lib/d
 import { releaseExpiredOrders } from "~/lib/order.server";
 import { getSettings } from "~/lib/settings.server";
 import { cn, formatDate, formatVnd } from "~/lib/format";
-import { IMAGE_PLACEHOLDER, imageUrl } from "~/lib/images";
+import { imageUrl, placeholderFor } from "~/lib/images";
 import { TARGET_GROUPS } from "~/lib/types";
 
 export function meta({ data }: Route.MetaArgs) {
@@ -146,7 +146,10 @@ export default function ProductDetail({ loaderData }: Route.ComponentProps) {
 					<div className="order-2 min-w-0 flex-1">
 						<div className="relative aspect-4/5 overflow-hidden rounded-2xl bg-ink-100">
 							<img
-								src={imageUrl(mainImage?.r2_key) ?? IMAGE_PLACEHOLDER}
+								src={
+									imageUrl(mainImage?.r2_key) ??
+									placeholderFor(product.category_slug, product.target_group)
+								}
 								alt={mainImage?.alt ?? product.name}
 								className="h-full w-full object-cover"
 							/>
@@ -172,7 +175,10 @@ export default function ProductDetail({ loaderData }: Route.ComponentProps) {
 									aria-label={`Xem ảnh ${index + 1}`}
 								>
 									<img
-										src={imageUrl(image.r2_key) ?? IMAGE_PLACEHOLDER}
+										src={
+											imageUrl(image.r2_key) ??
+											placeholderFor(product.category_slug, product.target_group)
+										}
 										alt=""
 										loading="lazy"
 										className="h-full w-full object-cover"

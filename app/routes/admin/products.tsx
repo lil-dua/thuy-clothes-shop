@@ -10,7 +10,7 @@ import { EditIcon, PlusIcon, SearchIcon, TrashIcon } from "~/components/icons";
 import { getCategories, listAdminProducts } from "~/lib/db.server";
 import { getPostedProductIds } from "~/lib/threads.server";
 import { cn, formatVnd } from "~/lib/format";
-import { IMAGE_PLACEHOLDER, imageUrl } from "~/lib/images";
+import { imageUrl, placeholderFor } from "~/lib/images";
 import { TARGET_GROUPS, type ProductStatus, type TargetGroup } from "~/lib/types";
 
 export function meta() {
@@ -169,7 +169,10 @@ export default function AdminProducts({ loaderData }: Route.ComponentProps) {
 									<td className="px-4 py-2">
 										<div className="aspect-4/5 w-10 overflow-hidden rounded-md bg-ink-100">
 											<img
-												src={imageUrl(product.image_key) ?? IMAGE_PLACEHOLDER}
+												src={
+													imageUrl(product.image_key) ??
+													placeholderFor(product.category_slug, product.target_group)
+												}
 												alt=""
 												className="h-full w-full object-cover"
 											/>

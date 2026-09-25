@@ -2,7 +2,7 @@ import { useId, useState } from "react";
 import { Form, Link, useNavigation } from "react-router";
 import { PlusIcon, TrashIcon, UploadIcon } from "~/components/icons";
 import { formatNumber, parseVnd } from "~/lib/format";
-import { IMAGE_PLACEHOLDER, imageUrl } from "~/lib/images";
+import { imageUrl, placeholderFor } from "~/lib/images";
 import type { ProductFormErrors } from "~/lib/product-form.server";
 import { TARGET_GROUPS, type Category, type ProductDetail, type TargetGroup } from "~/lib/types";
 
@@ -178,7 +178,10 @@ export function ProductForm({
 												className={`aspect-4/5 overflow-hidden rounded-lg bg-ink-100 ${removed ? "opacity-30" : ""}`}
 											>
 												<img
-													src={imageUrl(image.r2_key) ?? IMAGE_PLACEHOLDER}
+													src={
+														imageUrl(image.r2_key) ??
+														placeholderFor(product?.category_slug, product?.target_group)
+													}
 													alt=""
 													className="h-full w-full object-cover"
 												/>
