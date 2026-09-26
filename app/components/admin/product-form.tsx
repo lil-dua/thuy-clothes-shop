@@ -1,6 +1,7 @@
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { Form, Link, useNavigation } from "react-router";
 import { PlusIcon, TrashIcon, UploadIcon } from "~/components/icons";
+import { compressImage, formatBytes } from "~/lib/compress-image";
 import { formatNumber, parseVnd } from "~/lib/format";
 import { imageUrl, placeholderFor } from "~/lib/images";
 import type { ProductFormErrors } from "~/lib/product-form.server";
@@ -56,6 +57,35 @@ export function ProductForm({
 			: [blankRow()],
 	);
 	const [deletedImages, setDeletedImages] = useState<number[]>([]);
+
+	// Nén ảnh ngay khi chọn, trước lúc gửi lên server
+	const fileInput = useRef<HTMLInputElement>(null);
+	const [compressing, setCompressing] = useState(false);
+	const [picked, setPicked] = useState<{ count: number; before: number; after: number } | null>(null);
+
+	async function handleFiles(event: React.ChangeEvent<HTMLInputElement>) {
+		const chosen = [...(event.target.files ?? [])];
+		if (chosen.length === 0) return;
+
+		setCompressing(true);
+		try {
+			const results = await Promise.all(chosen.map(compressImage));
+
+			// Không gán trực tiếp được vào input.files, phải dựng lại FileList
+			// qua DataTransfer thì biểu mẫu mới gửi đi bản đã nén.
+			const transfer = new DataTransfer();
+			for (const result of results) transfer.items.add(result.file);
+			if (fileInput.current) fileInput.current.files = transfer.files;
+
+			setPicked({
+				count: results.length,
+				before: results.reduce((sum, r) => sum + r.originalBytes, 0),
+				after: results.reduce((sum, r) => sum + r.compressedBytes, 0),
+			});
+		} finally {
+			setCompressing(false);
+		}
+	}
 
 	const selectedGroup = categories.find(
 		(category) => String(category.id) === categoryId,
@@ -213,10 +243,31 @@ export function ProductForm({
 
 						<label className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed border-ink-200 px-4 py-8 text-center hover:border-brand-300 hover:bg-brand-50/40">
 							<UploadIcon className="h-6 w-6 text-brand-400" />
-							<span className="text-sm font-medium text-ink-700">Thêm ảnh</span>
-							<span className="text-xs text-ink-400">Chọn một hoặc nhiều ảnh</span>
-							<input type="file" name="images" accept="image/*" multiple className="sr-only" />
+							<span className="text-sm font-medium text-ink-700">
+								{compressing ? "Đang nén ảnh..." : "Thêm ảnh"}
+							</span>
+							<span className="text-xs text-ink-400">
+								Chọn một hoặc nhiều ảnh — hệ thống tự thu nhỏ trước khi tải lên
+							</span>
+							<input
+								ref={fileInput}
+								type="file"
+								name="images"
+								accept="image/*"
+								multiple
+								onChange={handleFiles}
+								className="sr-only"
+							/>
 						</label>
+
+						{picked && (
+							<p className="mt-2 text-xs text-green-700">
+								Đã chọn {picked.count} ảnh · {formatBytes(picked.before)} →{" "}
+								<strong>{formatBytes(picked.after)}</strong>
+								{picked.before > picked.after &&
+									` (nhẹ hơn ${Math.round((1 - picked.after / picked.before) * 100)}%)`}
+							</p>
+						)}
 						{errors.images && <p className="mt-1 text-xs text-red-600">{errors.images}</p>}
 					</section>
 				</div>
@@ -453,8 +504,12 @@ export function ProductForm({
 				<Link to="/admin/san-pham" className="btn-ghost btn-md">
 					Huỷ
 				</Link>
-				<button type="submit" disabled={submitting} className="btn-primary btn-md">
-					{submitting ? "Đang lưu..." : "Lưu sản phẩm"}
+				<button
+					type="submit"
+					disabled={submitting || compressing}
+					className="btn-primary btn-md"
+				>
+					{compressing ? "Đang nén ảnh..." : submitting ? "Đang lưu..." : "Lưu sản phẩm"}
 				</button>
 			</div>
 		</Form>
