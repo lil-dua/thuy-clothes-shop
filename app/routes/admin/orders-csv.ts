@@ -1,4 +1,5 @@
 import type { Route } from "./+types/orders-csv";
+import { requireAdmin } from "~/lib/auth.server";
 import { listOrders } from "~/lib/db.server";
 import { formatDateTime } from "~/lib/format";
 import {
@@ -15,9 +16,16 @@ import {
  *
  * Giữ nguyên bộ lọc đang xem ở trang danh sách, nên "xuất đơn tháng này, đã
  * giao" chỉ là lọc rồi bấm xuất.
+ *
+ * PHẢI tự gọi requireAdmin. Đây là resource route (không có default export),
+ * mà React Router không chạy loader của layout cha cho loại route này — nên
+ * lớp bảo vệ ở routes/admin/layout.tsx hoàn toàn không đụng tới đường dẫn này.
+ * Thiếu dòng dưới là cả danh sách khách hàng kèm số điện thoại và địa chỉ tải
+ * về được chỉ bằng một URL.
  */
 export async function loader({ request, context }: Route.LoaderArgs) {
 	const db = context.cloudflare.env.DB;
+	await requireAdmin(db, request);
 	const url = new URL(request.url);
 
 	const { items } = await listOrders(db, {
