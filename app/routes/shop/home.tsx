@@ -13,17 +13,26 @@ import { TARGET_GROUPS, type TargetGroup } from "~/lib/types";
 
 export function meta({ data }: Route.MetaArgs) {
 	const name = data?.shopName ?? "Lumi";
+	const description =
+		"Đầm, áo, quần và set đồ cho nữ và trẻ em. Giao hàng toàn quốc, thanh toán COD hoặc chuyển khoản.";
+
 	return [
 		{ title: `${name} — Thời trang nữ & trẻ em` },
-		{
-			name: "description",
-			content:
-				"Đầm, áo, quần và set đồ cho nữ và trẻ em. Giao hàng toàn quốc, thanh toán COD hoặc chuyển khoản.",
-		},
+		{ name: "description", content: description },
+		{ property: "og:site_name", content: name },
+		{ property: "og:title", content: `${name} — Thời trang nữ & trẻ em` },
+		{ property: "og:description", content: description },
+		{ property: "og:type", content: "website" },
+		...(data?.ogImage
+			? [
+					{ property: "og:image", content: data.ogImage },
+					{ name: "twitter:card", content: "summary_large_image" },
+				]
+			: []),
 	];
 }
 
-export async function loader({ context }: Route.LoaderArgs) {
+export async function loader({ request, context }: Route.LoaderArgs) {
 	const db = context.cloudflare.env.DB;
 	const [featured, newest, categories, settings] = await Promise.all([
 		getFeaturedProducts(db, 8),
@@ -32,10 +41,14 @@ export async function loader({ context }: Route.LoaderArgs) {
 		getSettings(db),
 	]);
 
+	// Lấy ảnh của một sản phẩm nổi bật làm preview cho trang chủ
+	const cover = [...featured, ...newest].find((item) => item.image_key)?.image_key;
+
 	return {
 		featured,
 		newest,
 		categories,
+		ogImage: cover ? `${new URL(request.url).origin}/anh/${cover}` : null,
 		shopName: settings.shop_name,
 		shopTagline: settings.shop_tagline,
 		freeShippingThreshold: Number.parseInt(settings.free_shipping_threshold, 10) || 0,

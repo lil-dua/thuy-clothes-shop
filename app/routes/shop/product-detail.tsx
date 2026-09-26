@@ -21,20 +21,41 @@ import { TARGET_GROUPS } from "~/lib/types";
 
 export function meta({ data }: Route.MetaArgs) {
 	if (!data) return [{ title: "Sản phẩm — Lumi" }];
+
+	const { product, shopUrl, shopName, ogImage } = data;
+	const description =
+		product.description?.slice(0, 200) ??
+		`Mua ${product.name} tại ${shopName}. Giao hàng toàn quốc.`;
+	const url = `${shopUrl}/san-pham/${product.slug}`;
+
 	return [
-		{ title: `${data.product.name} — Lumi` },
-		{
-			name: "description",
-			content:
-				data.product.description?.slice(0, 160) ??
-				`Mua ${data.product.name} tại Lumi. Giao hàng toàn quốc.`,
-		},
-		{ property: "og:title", content: data.product.name },
+		{ title: `${product.name} — ${shopName}` },
+		{ name: "description", content: description },
+
+		// Thẻ preview khi dán link lên Threads, Zalo, Facebook. Thiếu og:image
+		// thì link hiện ra một khối trắng trơn — với shop bán qua Threads thì
+		// mỗi bài đăng đều mất phần nhìn.
+		{ property: "og:site_name", content: shopName },
+		{ property: "og:title", content: product.name },
+		{ property: "og:description", content: description },
 		{ property: "og:type", content: "product" },
+		{ property: "og:url", content: url },
+		...(ogImage
+			? [
+					{ property: "og:image", content: ogImage },
+					{ property: "og:image:alt", content: product.name },
+					{ name: "twitter:card", content: "summary_large_image" },
+					{ name: "twitter:image", content: ogImage },
+				]
+			: [{ name: "twitter:card", content: "summary" }]),
+		{ name: "twitter:title", content: product.name },
+		{ name: "twitter:description", content: description },
+		{ property: "product:price:amount", content: String(product.sale_price) },
+		{ property: "product:price:currency", content: "VND" },
 	];
 }
 
-export async function loader({ params, context }: Route.LoaderArgs) {
+export async function loader({ params, request, context }: Route.LoaderArgs) {
 	const db = context.cloudflare.env.DB;
 
 	// Trả kho cho các đơn quá hạn giữ chỗ trước khi đọc tồn — tránh hiện
@@ -50,10 +71,19 @@ export async function loader({ params, context }: Route.LoaderArgs) {
 		getSettings(db),
 	]);
 
+	const origin = new URL(request.url).origin;
+
+	// CHỈ đặt og:image khi có ảnh thật. Ảnh mặc định của hệ thống là SVG, mà
+	// Threads/Facebook không dựng preview từ SVG — đặt vào chỉ làm hỏng thẻ.
+	const firstImage = product.images[0]?.r2_key;
+
 	return {
 		product,
 		related,
 		reviews,
+		shopUrl: origin,
+		shopName: settings.shop_name,
+		ogImage: firstImage ? `${origin}/anh/${firstImage}` : null,
 		freeShippingThreshold: Number.parseInt(settings.free_shipping_threshold, 10) || 0,
 		returnDays: settings.return_policy_days,
 	};
