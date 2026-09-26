@@ -39,6 +39,7 @@ export default [
 		route("thanh-toan", "routes/shop/checkout.tsx"),
 		route("don-hang/:code", "routes/shop/order-detail.tsx"),
 		route("tra-cuu-don-hang", "routes/shop/order-lookup.tsx"),
+		route("chinh-sach/:slug", "routes/shop/policy.tsx"),
 	]),
 
 	// --- Quản trị ----------------------------------------------------------

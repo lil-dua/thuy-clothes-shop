@@ -398,6 +398,17 @@ export default function Checkout({ loaderData, actionData }: Route.ComponentProp
 						>
 							{submitting ? "Đang xử lý..." : "Đặt hàng"}
 						</button>
+						<p className="mt-2 text-center text-xs text-ink-400">
+							Đặt hàng nghĩa là bạn đồng ý với{" "}
+							<Link to="/chinh-sach/doi-tra" className="underline hover:text-brand-600">
+								chính sách đổi trả
+							</Link>{" "}
+							và{" "}
+							<Link to="/chinh-sach/bao-mat" className="underline hover:text-brand-600">
+								bảo mật
+							</Link>
+							.
+						</p>
 						<Link
 							to="/gio-hang"
 							className="mt-2 block text-center text-sm text-ink-500 hover:text-brand-600"

@@ -48,6 +48,12 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 			changefreq: "weekly" as const,
 			priority: "0.6",
 		})),
+		// Trang chính sách: đổi rất ít nhưng Google coi là tín hiệu shop đáng tin
+		...["doi-tra", "van-chuyen", "bao-mat"].map((slug) => ({
+			path: `/chinh-sach/${slug}`,
+			changefreq: "monthly" as const,
+			priority: "0.3",
+		})),
 	];
 
 	const xml = `<?xml version="1.0" encoding="UTF-8"?>

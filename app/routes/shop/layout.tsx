@@ -360,8 +360,21 @@ function Footer({ loaderData }: { loaderData: Route.ComponentProps["loaderData"]
 								Tra cứu đơn hàng
 							</Link>
 						</li>
-						<li>Đổi trả trong {returnDays} ngày</li>
-						<li>Thanh toán COD / chuyển khoản / MoMo</li>
+						<li>
+							<Link to="/chinh-sach/doi-tra" className="hover:text-brand-600">
+								Đổi trả trong {returnDays} ngày
+							</Link>
+						</li>
+						<li>
+							<Link to="/chinh-sach/van-chuyen" className="hover:text-brand-600">
+								Vận chuyển & thanh toán
+							</Link>
+						</li>
+						<li>
+							<Link to="/chinh-sach/bao-mat" className="hover:text-brand-600">
+								Chính sách bảo mật
+							</Link>
+						</li>
 					</ul>
 				</div>
 			</div>

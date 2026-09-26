@@ -290,7 +290,18 @@ này dò hộ luôn.
 Việc gửi chạy nền bằng `ctx.waitUntil`, nên khách không phải đợi Resend trả lời
 mới thấy trang cảm ơn. Mail hỏng **không bao giờ** làm hỏng việc đặt hàng — đơn
 đã nằm trong database rồi. Mọi lần gửi, kể cả bỏ qua vì chưa cấu hình, đều ghi
-vào bảng `email_log` kèm nguyên nhân.
+vào bảng `notification_log` kèm nguyên nhân.
+
+## Trang chính sách
+
+`/chinh-sach/doi-tra`, `/chinh-sach/van-chuyen`, `/chinh-sach/bao-mat`.
+
+Nội dung **dựng từ bảng Cài đặt** chứ không viết cứng: đổi phí ship, ngưỡng
+miễn phí, số phút giữ hàng hay số ngày đổi trả trong trang quản trị là chính
+sách đổi theo. Chính sách nói một đằng mà trang thanh toán tính một nẻo là
+nguồn khiếu nại chắc chắn.
+
+Có link ở footer và ngay dưới nút Đặt hàng. Slug lạ thì chuyển về trang đổi trả.
 
 ## Chưa làm (theo kế hoạch trong `docs/`)
 
