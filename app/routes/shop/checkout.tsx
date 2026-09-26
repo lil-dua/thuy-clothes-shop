@@ -11,7 +11,9 @@ import {
 } from "~/lib/cart.server";
 import { createOrder, releaseExpiredOrders, validateDiscountCode } from "~/lib/order.server";
 import { rememberOrder } from "~/lib/recent-orders.server";
-import { getSettings, shippingFeeFor } from "~/lib/settings.server";
+import { getSecret, getSettings, shippingFeeFor } from "~/lib/settings.server";
+import { sendOrderEmails } from "~/lib/email.server";
+import { getOrderByCode } from "~/lib/db.server";
 import { formatVnd, isValidPhone, normalizePhone } from "~/lib/format";
 import { IMAGE_PLACEHOLDER, imageUrl } from "~/lib/images";
 import { PAYMENT_METHOD_LABEL, type PaymentMethod } from "~/lib/types";
@@ -59,7 +61,8 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 }
 
 export async function action({ request, context }: Route.ActionArgs) {
-	const db = context.cloudflare.env.DB;
+	const env = context.cloudflare.env;
+	const db = env.DB;
 	const form = await request.formData();
 	const intent = String(form.get("intent") ?? "order");
 
@@ -91,6 +94,7 @@ export async function action({ request, context }: Route.ActionArgs) {
 	const customerName = String(form.get("customerName") ?? "").trim();
 	const rawPhone = String(form.get("customerPhone") ?? "").trim();
 	const customerAddress = String(form.get("customerAddress") ?? "").trim();
+	const customerEmail = String(form.get("customerEmail") ?? "").trim().toLowerCase();
 	const paymentMethod = String(form.get("paymentMethod") ?? "cod") as PaymentMethod;
 	const note = String(form.get("note") ?? "").trim() || null;
 
@@ -98,6 +102,11 @@ export async function action({ request, context }: Route.ActionArgs) {
 	if (customerName.length < 2) errors.customerName = "Vui lòng nhập họ tên người nhận";
 	if (!isValidPhone(rawPhone)) errors.customerPhone = "Số điện thoại không hợp lệ (10 số)";
 	if (customerAddress.length < 8) errors.customerAddress = "Vui lòng nhập địa chỉ đầy đủ";
+	// Email không bắt buộc, nhưng đã nhập thì phải đúng dạng — gõ sai là mất
+	// luôn thư xác nhận mà khách không biết vì sao.
+	if (customerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(customerEmail)) {
+		errors.customerEmail = "Email không hợp lệ";
+	}
 	if (!["cod", "bank_transfer", "momo"].includes(paymentMethod)) {
 		errors.paymentMethod = "Vui lòng chọn phương thức thanh toán";
 	}
@@ -115,6 +124,7 @@ export async function action({ request, context }: Route.ActionArgs) {
 		items,
 		customerName,
 		customerPhone: normalizePhone(rawPhone),
+		customerEmail: customerEmail || null,
 		customerAddress,
 		paymentMethod,
 		note,
@@ -124,6 +134,16 @@ export async function action({ request, context }: Route.ActionArgs) {
 	if (!result.ok) {
 		const failure: Record<string, string> = { form: result.error };
 		return data({ errors: failure }, { status: 400 });
+	}
+
+	// Gửi email chạy nền bằng waitUntil: khách không phải đợi Resend trả lời
+	// mới thấy trang cảm ơn, và mail hỏng cũng không chặn được việc đặt hàng.
+	const created = await getOrderByCode(db, result.orderCode);
+	if (created) {
+		const apiKey = await getSecret(db, "resend_api_key", env as unknown as Record<string, unknown>);
+		context.cloudflare.ctx.waitUntil(
+			sendOrderEmails(db, apiKey, settings, created, new URL(request.url).origin),
+		);
 	}
 
 	// Đặt hàng xong thì dọn giỏ, dọn mã giảm giá, và ghi nhớ mã đơn để khách
@@ -195,6 +215,15 @@ export default function Checkout({ loaderData, actionData }: Route.ComponentProp
 								error={errors.customerPhone}
 								autoComplete="tel"
 								required
+							/>
+							<Field
+								label="Email"
+								name="customerEmail"
+								type="email"
+								placeholder="de-nhan-xac-nhan-don@email.com"
+								error={errors.customerEmail}
+								autoComplete="email"
+								hint="Không bắt buộc — có email thì shop gửi xác nhận đơn cho bạn"
 							/>
 							<div>
 								<label htmlFor="customerAddress" className="field-label">
@@ -382,11 +411,13 @@ function Field({
 	name,
 	error,
 	required,
+	hint,
 	...props
 }: {
 	label: string;
 	name: string;
 	error?: string;
+	hint?: string;
 } & React.InputHTMLAttributes<HTMLInputElement>) {
 	return (
 		<div>
@@ -400,7 +431,11 @@ function Field({
 				className={`field ${error ? "field-error" : ""}`}
 				{...props}
 			/>
-			{error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+			{error ? (
+				<p className="mt-1 text-xs text-red-600">{error}</p>
+			) : (
+				hint && <p className="mt-1 text-xs text-ink-400">{hint}</p>
+			)}
 		</div>
 	);
 }

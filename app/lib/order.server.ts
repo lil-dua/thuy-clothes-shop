@@ -15,6 +15,7 @@ export interface CreateOrderInput {
 	items: CartLineDetail[];
 	customerName: string;
 	customerPhone: string;
+	customerEmail?: string | null;
 	customerAddress: string;
 	paymentMethod: PaymentMethod;
 	note?: string | null;
@@ -75,12 +76,19 @@ export async function createOrder(
 	statements.push(
 		db
 			.prepare(
-				`INSERT INTO customers (name, phone, address) VALUES (?1, ?2, ?3)
+				`INSERT INTO customers (name, phone, address, email) VALUES (?1, ?2, ?3, ?4)
 				 ON CONFLICT(phone) DO UPDATE SET
 				   name = excluded.name,
-				   address = excluded.address`,
+				   address = excluded.address,
+				   -- Giữ email cũ nếu lần này khách không nhập
+				   email = COALESCE(excluded.email, customers.email)`,
 			)
-			.bind(input.customerName, input.customerPhone, input.customerAddress),
+			.bind(
+				input.customerName,
+				input.customerPhone,
+				input.customerAddress,
+				input.customerEmail ?? null,
+			),
 	);
 
 	// 2. Đơn hàng
@@ -90,10 +98,10 @@ export async function createOrder(
 				`INSERT INTO orders (
 				   order_code, customer_id, customer_name, customer_phone, customer_address,
 				   payment_method, subtotal, shipping_fee, discount_code, discount_amount,
-				   total, note, reserved_until
+				   total, note, reserved_until, customer_email
 				 ) VALUES (
 				   ?1, (SELECT id FROM customers WHERE phone = ?3), ?2, ?3, ?4,
-				   ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12
+				   ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13
 				 )`,
 			)
 			.bind(
@@ -109,6 +117,7 @@ export async function createOrder(
 				total,
 				input.note ?? null,
 				reservedUntil,
+				input.customerEmail ?? null,
 			),
 	);
 

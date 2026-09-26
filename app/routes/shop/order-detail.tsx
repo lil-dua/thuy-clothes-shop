@@ -1,7 +1,9 @@
-import { Link, redirect } from "react-router";
+import { Link, data, redirect } from "react-router";
 import type { Route } from "./+types/order-detail";
 import { CheckIcon, PackageIcon, TruckIcon } from "~/components/icons";
 import { getOrderByCode } from "~/lib/db.server";
+import { getReviewableItems, submitReview } from "~/lib/reviews.server";
+import { ReviewSection } from "~/components/shop/review-form";
 import { releaseExpiredOrders } from "~/lib/order.server";
 import { canViewOrder } from "~/lib/recent-orders.server";
 import { getSettings, vietQrImageUrl } from "~/lib/settings.server";
@@ -36,11 +38,17 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 	if (!order) throw new Response("Không tìm thấy đơn hàng", { status: 404 });
 
 	const settings = await getSettings(db);
+
+	// Chỉ đơn đã giao mới mời đánh giá — hàng chưa tới tay thì chưa có gì để nói
+	const reviewable =
+		order.order_status === "delivered" ? await getReviewableItems(db, order.id) : [];
+
 	const awaitingTransfer =
 		order.payment_status === "pending" && order.order_status !== "cancelled";
 
 	return {
 		order,
+		reviewable,
 		settings: {
 			bank_id: settings.bank_id,
 			bank_account_no: settings.bank_account_no,
@@ -57,10 +65,40 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 	};
 }
 
+export async function action({ params, request, context }: Route.ActionArgs) {
+	const db = context.cloudflare.env.DB;
+	const code = params.code.toUpperCase();
+
+	// Cùng chốt chặn như loader: không có cookie hoặc chưa xác minh số điện
+	// thoại thì không gửi đánh giá hộ người khác được.
+	if (!(await canViewOrder(request, code))) {
+		throw redirect(`/tra-cuu-don-hang?ma=${encodeURIComponent(code)}`);
+	}
+
+	const order = await getOrderByCode(db, code);
+	if (!order) throw new Response("Không tìm thấy đơn hàng", { status: 404 });
+
+	const form = await request.formData();
+	if (form.get("intent") !== "review") {
+		return data({ reviewError: "Thao tác không hợp lệ" }, { status: 400 });
+	}
+
+	const result = await submitReview(db, {
+		orderId: order.id,
+		productId: Number.parseInt(String(form.get("productId") ?? ""), 10),
+		authorName: String(form.get("authorName") ?? order.customer_name),
+		rating: Number.parseInt(String(form.get("rating") ?? "0"), 10),
+		content: String(form.get("content") ?? "").trim() || null,
+	});
+
+	if (!result.ok) return data({ reviewError: result.error }, { status: 400 });
+	return data({ reviewMessage: "Cảm ơn bạn đã đánh giá!" });
+}
+
 const STATUS_STEPS: OrderStatus[] = ["pending", "confirmed", "shipping", "delivered"];
 
-export default function OrderDetail({ loaderData }: Route.ComponentProps) {
-	const { order, settings, vietQrUrl } = loaderData;
+export default function OrderDetail({ loaderData, actionData }: Route.ComponentProps) {
+	const { order, settings, vietQrUrl, reviewable } = loaderData;
 	const cancelled = order.order_status === "cancelled";
 	const currentStep = STATUS_STEPS.indexOf(order.order_status as OrderStatus);
 	const awaitingPayment =
@@ -271,6 +309,20 @@ export default function OrderDetail({ loaderData }: Route.ComponentProps) {
 					</div>
 				</dl>
 			</section>
+
+			{actionData && "reviewMessage" in actionData && actionData.reviewMessage && (
+				<p className="mt-5 flex items-center gap-2 rounded-xl bg-green-50 px-4 py-3 text-sm text-green-700">
+					<CheckIcon className="h-4 w-4" />
+					{actionData.reviewMessage}
+				</p>
+			)}
+			{actionData && "reviewError" in actionData && actionData.reviewError && (
+				<p className="mt-5 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+					{actionData.reviewError}
+				</p>
+			)}
+
+			<ReviewSection items={reviewable} customerName={order.customer_name} />
 
 			<div className="mt-6 flex flex-wrap justify-center gap-3">
 				<Link to="/san-pham" className="btn-outline btn-md">

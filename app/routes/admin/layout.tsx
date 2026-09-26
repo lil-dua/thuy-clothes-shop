@@ -3,6 +3,7 @@ import { Form, Link, NavLink, Outlet } from "react-router";
 import type { Route } from "./+types/layout";
 import { requireAdmin } from "~/lib/auth.server";
 import { releaseExpiredOrders } from "~/lib/order.server";
+import { countHiddenReviews } from "~/lib/reviews.server";
 import { cn } from "~/lib/format";
 import {
 	ChartIcon,
@@ -13,6 +14,7 @@ import {
 	PackageIcon,
 	ReceiptIcon,
 	SettingsIcon,
+	StarIcon,
 	TagIcon,
 	UsersIcon,
 } from "~/components/icons";
@@ -30,11 +32,14 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 	// số liệu tồn kho hiển thị luôn khớp thực tế mà không cần cron riêng.
 	await releaseExpiredOrders(db);
 
-	const pending = await db
-		.prepare(`SELECT COUNT(*) AS total FROM orders WHERE order_status = 'pending'`)
-		.first<{ total: number }>();
+	const [pending, hiddenReviews] = await Promise.all([
+		db
+			.prepare(`SELECT COUNT(*) AS total FROM orders WHERE order_status = 'pending'`)
+			.first<{ total: number }>(),
+		countHiddenReviews(db),
+	]);
 
-	return { user, pendingOrders: pending?.total ?? 0 };
+	return { user, pendingOrders: pending?.total ?? 0, hiddenReviews };
 }
 
 const NAV = [
@@ -43,6 +48,7 @@ const NAV = [
 	{ to: "/admin/don-hang", label: "Đơn hàng", Icon: ReceiptIcon, end: false, badge: true },
 	{ to: "/admin/khach-hang", label: "Khách hàng", Icon: UsersIcon, end: false },
 	{ to: "/admin/khuyen-mai", label: "Khuyến mãi", Icon: TagIcon, end: false },
+	{ to: "/admin/danh-gia", label: "Đánh giá", Icon: StarIcon, end: false },
 	{ to: "/admin/bao-cao", label: "Báo cáo", Icon: ChartIcon, end: false },
 	{ to: "/admin/cai-dat", label: "Cài đặt", Icon: SettingsIcon, end: false },
 ];

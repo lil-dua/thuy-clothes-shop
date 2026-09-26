@@ -56,6 +56,7 @@ export default [
 			route("don-hang/:id", "routes/admin/order-detail.tsx"),
 			route("khach-hang", "routes/admin/customers.tsx"),
 			route("khuyen-mai", "routes/admin/discounts.tsx"),
+			route("danh-gia", "routes/admin/reviews.tsx"),
 			route("bao-cao", "routes/admin/reports.tsx"),
 			route("cai-dat", "routes/admin/settings.tsx"),
 		]),

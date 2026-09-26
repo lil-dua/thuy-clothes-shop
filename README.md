@@ -241,6 +241,38 @@ biến môi trường trước bảng `settings`:
 npx wrangler secret put TYPEFULLY_API_KEY
 ```
 
+## Đánh giá sản phẩm
+
+Chỉ khách **đã mua và đã nhận hàng** mới đánh giá được: biểu mẫu nằm trong trang
+theo dõi đơn, mà trang đó chỉ mở cho trình duyệt vừa đặt đơn hoặc vừa nhập đúng
+số điện thoại. Nhờ vậy không cần captcha, không cần bước duyệt trước, và mỗi
+đánh giá đều gắn với một đơn có thật.
+
+Mỗi đơn đánh giá một sản phẩm một lần; gửi lại thì ghi đè đánh giá cũ. Chủ shop
+xem và ẩn/xoá trong **Quản trị → Đánh giá**; đánh giá bị ẩn biến mất khỏi trang
+sản phẩm nhưng vẫn còn trong database.
+
+## Email xác nhận đơn
+
+Dùng **Resend** (miễn phí 3.000 thư/tháng). MailChannels — thứ hay được giới
+thiệu là miễn phí cho Workers — đã ngừng dịch vụ đó từ 30/6/2024.
+
+Ô email ở trang thanh toán **không bắt buộc**: khách Việt đặt qua Threads phần
+lớn chỉ để lại số điện thoại, bắt nhập email là mất đơn. Có email thì khách nhận
+thư xác nhận kèm mã QR chuyển khoản; chủ shop nhận thư báo đơn mới.
+
+Bật trong **Cài đặt → Email xác nhận đơn**: dán API key, điền địa chỉ gửi, bấm
+**Gửi thử** để kiểm tra trước khi tin.
+
+> Resend đòi **domain đã xác minh** mới cho gửi tới địa chỉ bất kỳ. Chưa có
+> domain riêng thì chỉ gửi được tới chính email đã đăng ký tài khoản Resend —
+> đủ để nhận báo đơn mới, chưa đủ để gửi cho khách.
+
+Việc gửi chạy nền bằng `ctx.waitUntil`, nên khách không phải đợi Resend trả lời
+mới thấy trang cảm ơn. Mail hỏng **không bao giờ** làm hỏng việc đặt hàng — đơn
+đã nằm trong database rồi. Mọi lần gửi, kể cả bỏ qua vì chưa cấu hình, đều ghi
+vào bảng `email_log` kèm nguyên nhân.
+
 ## Chưa làm (theo kế hoạch trong `docs/`)
 
 - Chiều ngược Threads → web (giai đoạn 5)

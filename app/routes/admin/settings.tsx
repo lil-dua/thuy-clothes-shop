@@ -17,6 +17,7 @@ import {
 	type ShopSettings,
 } from "~/lib/settings.server";
 import { listSocialSets } from "~/lib/threads.server";
+import { sendTestEmail } from "~/lib/email.server";
 import { THREADS_PLACEHOLDERS, type SocialSet } from "~/lib/threads";
 import { TARGET_GROUPS, type TargetGroup } from "~/lib/types";
 
@@ -35,6 +36,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 
 	const envRecord = env as unknown as Record<string, unknown>;
 	const apiKeySet = await hasSecret(db, "typefully_api_key", envRecord);
+	const resendKeySet = await hasSecret(db, "resend_api_key", envRecord);
 
 	// Danh sách tài khoản Typefully chỉ nạp khi chủ shop bấm nút, vì mỗi lần nạp
 	// là một lượt gọi ra API bên ngoài — không nên chạy ở mọi lần mở trang.
@@ -47,7 +49,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 		else socialSetsError = result.error;
 	}
 
-	return { settings, categories, user, apiKeySet, socialSets, socialSetsError };
+	return { settings, categories, user, apiKeySet, resendKeySet, socialSets, socialSetsError };
 }
 
 export async function action({ request, context }: Route.ActionArgs) {
@@ -91,6 +93,37 @@ export async function action({ request, context }: Route.ActionArgs) {
 
 		await updateSettings(db, values);
 		return data({ message: "Đã lưu thông tin thanh toán" });
+	}
+
+	// --- Email -------------------------------------------------------------
+	if (intent === "email") {
+		const key = String(form.get("resend_api_key") ?? "").trim();
+		if (key) await setSecret(db, "resend_api_key", key);
+
+		await updateSettings(db, {
+			email_from: String(form.get("email_from") ?? "").trim(),
+			email_owner: String(form.get("email_owner") ?? "").trim(),
+		});
+		return data({ message: "Đã lưu cấu hình email" });
+	}
+
+	if (intent === "email-test") {
+		const to = String(form.get("testTo") ?? "").trim();
+		if (!to) return data({ error: "Nhập địa chỉ nhận thư thử" }, { status: 400 });
+
+		const [current, apiKey] = await Promise.all([
+			getSettings(db),
+			getSecret(db, "resend_api_key", env as unknown as Record<string, unknown>),
+		]);
+		if (!apiKey) return data({ error: "Chưa lưu API key Resend" }, { status: 400 });
+		if (!current.email_from) {
+			return data({ error: "Chưa điền địa chỉ gửi" }, { status: 400 });
+		}
+
+		const sent = await sendTestEmail(apiKey, current, to);
+		return sent.ok
+			? data({ message: `Đã gửi thư thử tới ${to}` })
+			: data({ error: sent.error }, { status: 400 });
 	}
 
 	// --- Threads / Typefully ----------------------------------------------
@@ -200,7 +233,7 @@ export async function action({ request, context }: Route.ActionArgs) {
 }
 
 export default function AdminSettings({ loaderData, actionData }: Route.ComponentProps) {
-	const { settings, categories, apiKeySet, socialSets, socialSetsError } = loaderData;
+	const { settings, categories, apiKeySet, resendKeySet, socialSets, socialSetsError } = loaderData;
 
 	return (
 		<>
@@ -418,6 +451,82 @@ export default function AdminSettings({ loaderData, actionData }: Route.Componen
 						cùng tên.
 					</p>
 				</Section>
+
+				{/* --- Email ------------------------------------------------ */}
+				<section id="email" className="card p-4 lg:p-5 xl:col-span-2">
+					<h2 className="font-semibold text-ink-900">Email xác nhận đơn</h2>
+					<p className="mb-4 text-xs text-ink-400">
+						Khách để lại email khi đặt hàng sẽ nhận thư xác nhận kèm mã QR chuyển khoản.
+						Chủ shop nhận thư báo đơn mới. Dùng Resend — miễn phí 3.000 thư/tháng.
+					</p>
+
+					<div className="grid gap-5 lg:grid-cols-2">
+						<Form method="post" className="space-y-4">
+							<input type="hidden" name="intent" value="email" />
+							<div>
+								<label htmlFor="resend_api_key" className="field-label">
+									API key Resend
+								</label>
+								<input
+									id="resend_api_key"
+									name="resend_api_key"
+									type="password"
+									autoComplete="off"
+									placeholder={resendKeySet ? "Đã lưu — dán khoá mới để thay" : "re_..."}
+									className="field"
+								/>
+								<p className="mt-1 text-xs text-ink-400">
+									Lấy ở resend.com → API Keys.
+									{resendKeySet && " Khoá đã lưu và không hiển thị lại."}
+								</p>
+							</div>
+
+							<Field
+								label="Địa chỉ gửi"
+								name="email_from"
+								defaultValue={settings.email_from}
+								placeholder="Lumi &lt;donhang@tenmien.com&gt;"
+								hint="Domain phải được xác minh trong Resend, nếu không thư sẽ bị từ chối"
+							/>
+							<Field
+								label="Email nhận báo đơn mới"
+								name="email_owner"
+								type="email"
+								defaultValue={settings.email_owner}
+								placeholder="ban@email.com"
+								hint="Để trống thì không gửi thông báo cho chủ shop"
+							/>
+
+							<button type="submit" className="btn-primary btn-md">
+								Lưu cấu hình email
+							</button>
+						</Form>
+
+						<Form method="post" className="space-y-3">
+							<input type="hidden" name="intent" value="email-test" />
+							<span className="field-label">Gửi thử</span>
+							<p className="text-xs text-ink-400">
+								Gửi một thư mẫu để kiểm tra khoá và địa chỉ gửi có hoạt động không.
+							</p>
+							<div className="flex flex-wrap gap-2">
+								<input
+									name="testTo"
+									type="email"
+									placeholder="dia-chi-nhan@email.com"
+									defaultValue={settings.email_owner}
+									className="field !py-2 text-sm"
+								/>
+								<button type="submit" className="btn-outline btn-md shrink-0">
+									Gửi thử
+								</button>
+							</div>
+							<p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+								Chưa có domain riêng thì Resend chỉ cho gửi tới chính email đã đăng ký
+								tài khoản. Muốn gửi cho khách phải xác minh một domain.
+							</p>
+						</Form>
+					</div>
+				</section>
 
 				{/* --- Threads / Typefully --------------------------------- */}
 				<section id="threads" className="card p-4 lg:p-5 xl:col-span-2">

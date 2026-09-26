@@ -163,6 +163,7 @@ export interface Order {
 	customer_id: number | null;
 	customer_name: string;
 	customer_phone: string;
+	customer_email: string | null;
 	customer_address: string;
 	payment_method: PaymentMethod;
 	payment_status: PaymentStatus;
