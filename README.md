@@ -265,8 +265,27 @@ Bật trong **Cài đặt → Email xác nhận đơn**: dán API key, điền �
 **Gửi thử** để kiểm tra trước khi tin.
 
 > Resend đòi **domain đã xác minh** mới cho gửi tới địa chỉ bất kỳ. Chưa có
-> domain riêng thì chỉ gửi được tới chính email đã đăng ký tài khoản Resend —
-> đủ để nhận báo đơn mới, chưa đủ để gửi cho khách.
+> domain riêng thì chỉ gửi được tới chính email đã đăng ký tài khoản Resend.
+
+## Báo đơn mới qua Telegram
+
+Chủ shop nhận tin báo trong vài giây mỗi khi có đơn, kèm tên khách, số điện
+thoại, địa chỉ và danh sách sản phẩm.
+
+Chọn Telegram vì đây là kênh **tự động duy nhất miễn phí hoàn toàn** cho chiều
+này. Hai kênh người Việt hay nghĩ tới đều không miễn phí và đều đòi giấy phép
+kinh doanh:
+
+| Kênh | Chi phí | Điều kiện |
+|---|---|---|
+| SMS brandname | ~900k phí cấp tên + ~50k/tháng mỗi nhà mạng + phí mỗi tin | mã số ĐKKD |
+| Zalo ZNS | ~210–300đ/tin | OA xác thực doanh nghiệp, mẫu tin phải được duyệt |
+| Telegram | 0đ | không cần gì |
+
+Bật trong **Cài đặt → Báo đơn mới qua Telegram**: nhắn `/newbot` cho
+**@BotFather** lấy token, dán vào, **nhắn cho bot một câu**, rồi bấm *Dò cuộc
+trò chuyện* — Chat ID là thứ Telegram không hiện ở đâu trong giao diện nên chỗ
+này dò hộ luôn.
 
 Việc gửi chạy nền bằng `ctx.waitUntil`, nên khách không phải đợi Resend trả lời
 mới thấy trang cảm ơn. Mail hỏng **không bao giờ** làm hỏng việc đặt hàng — đơn

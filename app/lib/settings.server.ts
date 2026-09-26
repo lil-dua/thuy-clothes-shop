@@ -35,6 +35,8 @@ export interface ShopSettings {
 	email_from: string;
 	/** Nơi nhận thông báo đơn mới; để trống thì không báo cho chủ shop */
 	email_owner: string;
+	/** Chat Telegram nhận tin báo đơn mới — lấy bằng nút trong trang Cài đặt */
+	telegram_chat_id: string;
 }
 
 /** Mẫu caption mặc định — chủ shop sửa lại được trong trang Cài đặt */
@@ -71,6 +73,7 @@ export const DEFAULT_SETTINGS: ShopSettings = {
 	threads_auto_post: "0",
 	email_from: "",
 	email_owner: "",
+	telegram_chat_id: "",
 };
 
 /**
@@ -79,7 +82,11 @@ export const DEFAULT_SETTINGS: ShopSettings = {
  * loader của trang Cài đặt không thể vô tình gửi API key xuống trình duyệt.
  * Đọc/ghi phải đi qua getSecret / setSecret.
  */
-export const SECRET_KEYS = ["typefully_api_key", "resend_api_key"] as const;
+export const SECRET_KEYS = [
+	"typefully_api_key",
+	"resend_api_key",
+	"telegram_bot_token",
+] as const;
 export type SecretKey = (typeof SECRET_KEYS)[number];
 
 export async function getSettings(db: D1Database): Promise<ShopSettings> {

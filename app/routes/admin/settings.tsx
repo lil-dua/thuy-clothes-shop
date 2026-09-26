@@ -18,6 +18,12 @@ import {
 } from "~/lib/settings.server";
 import { listSocialSets } from "~/lib/threads.server";
 import { sendTestEmail } from "~/lib/email.server";
+import {
+	listTelegramChats,
+	renderTestMessage,
+	sendTelegramMessage,
+	type TelegramChat,
+} from "~/lib/telegram.server";
 import { THREADS_PLACEHOLDERS, type SocialSet } from "~/lib/threads";
 import { TARGET_GROUPS, type TargetGroup } from "~/lib/types";
 
@@ -37,6 +43,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 	const envRecord = env as unknown as Record<string, unknown>;
 	const apiKeySet = await hasSecret(db, "typefully_api_key", envRecord);
 	const resendKeySet = await hasSecret(db, "resend_api_key", envRecord);
+	const telegramKeySet = await hasSecret(db, "telegram_bot_token", envRecord);
 
 	// Danh sách tài khoản Typefully chỉ nạp khi chủ shop bấm nút, vì mỗi lần nạp
 	// là một lượt gọi ra API bên ngoài — không nên chạy ở mọi lần mở trang.
@@ -49,7 +56,29 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 		else socialSetsError = result.error;
 	}
 
-	return { settings, categories, user, apiKeySet, resendKeySet, socialSets, socialSetsError };
+	// Dò chat Telegram cũng chỉ chạy khi bấm nút, vì mỗi lần là một lượt gọi ra
+	// ngoài và getUpdates chỉ giữ lại tin trong ~24 giờ.
+	let telegramChats: TelegramChat[] = [];
+	let telegramError: string | null = null;
+	if (telegramKeySet && new URL(request.url).searchParams.has("chat")) {
+		const token = await getSecret(db, "telegram_bot_token", envRecord);
+		const found = await listTelegramChats(token!);
+		if (found.ok) telegramChats = found.chats;
+		else telegramError = found.error;
+	}
+
+	return {
+		settings,
+		categories,
+		user,
+		apiKeySet,
+		resendKeySet,
+		telegramKeySet,
+		telegramChats,
+		telegramError,
+		socialSets,
+		socialSetsError,
+	};
 }
 
 export async function action({ request, context }: Route.ActionArgs) {
@@ -93,6 +122,37 @@ export async function action({ request, context }: Route.ActionArgs) {
 
 		await updateSettings(db, values);
 		return data({ message: "Đã lưu thông tin thanh toán" });
+	}
+
+	// --- Telegram ----------------------------------------------------------
+	if (intent === "telegram") {
+		const token = String(form.get("telegram_bot_token") ?? "").trim();
+		if (token) await setSecret(db, "telegram_bot_token", token);
+
+		await updateSettings(db, {
+			telegram_chat_id: String(form.get("telegram_chat_id") ?? "").trim(),
+		});
+		return redirect("/admin/cai-dat?chat=1#telegram");
+	}
+
+	if (intent === "telegram-test") {
+		const [current, token] = await Promise.all([
+			getSettings(db),
+			getSecret(db, "telegram_bot_token", env as unknown as Record<string, unknown>),
+		]);
+		if (!token) return data({ error: "Chưa lưu token bot Telegram" }, { status: 400 });
+		if (!current.telegram_chat_id) {
+			return data({ error: "Chưa chọn cuộc trò chuyện nhận tin" }, { status: 400 });
+		}
+
+		const sent = await sendTelegramMessage(
+			token,
+			current.telegram_chat_id,
+			renderTestMessage(current),
+		);
+		return sent.ok
+			? data({ message: "Đã gửi tin thử qua Telegram" })
+			: data({ error: sent.error }, { status: 400 });
 	}
 
 	// --- Email -------------------------------------------------------------
@@ -233,7 +293,17 @@ export async function action({ request, context }: Route.ActionArgs) {
 }
 
 export default function AdminSettings({ loaderData, actionData }: Route.ComponentProps) {
-	const { settings, categories, apiKeySet, resendKeySet, socialSets, socialSetsError } = loaderData;
+	const {
+		settings,
+		categories,
+		apiKeySet,
+		resendKeySet,
+		telegramKeySet,
+		telegramChats,
+		telegramError,
+		socialSets,
+		socialSetsError,
+	} = loaderData;
 
 	return (
 		<>
@@ -451,6 +521,103 @@ export default function AdminSettings({ loaderData, actionData }: Route.Componen
 						cùng tên.
 					</p>
 				</Section>
+
+				{/* --- Telegram --------------------------------------------- */}
+				<section id="telegram" className="card p-4 lg:p-5 xl:col-span-2">
+					<h2 className="font-semibold text-ink-900">Báo đơn mới qua Telegram</h2>
+					<p className="mb-4 text-xs text-ink-400">
+						Miễn phí hoàn toàn, không cần giấy phép kinh doanh. Mỗi đơn mới sẽ báo về
+						điện thoại bạn trong vài giây, kèm tên khách, số điện thoại và địa chỉ.
+					</p>
+
+					<div className="grid gap-5 lg:grid-cols-2">
+						<Form method="post" className="space-y-4">
+							<input type="hidden" name="intent" value="telegram" />
+
+							<ol className="space-y-1 rounded-xl bg-ink-50 p-3 text-xs text-ink-600">
+								<li>1. Mở Telegram, nhắn <strong>@BotFather</strong>, gõ <code>/newbot</code></li>
+								<li>2. Đặt tên bot, BotFather trả về một token dạng <code>123456:ABC-…</code></li>
+								<li>3. Dán token vào ô dưới và lưu</li>
+								<li>4. <strong>Nhắn cho bot vừa tạo một câu bất kỳ</strong>, rồi bấm “Dò cuộc trò chuyện”</li>
+							</ol>
+
+							<div>
+								<label htmlFor="telegram_bot_token" className="field-label">
+									Token bot
+								</label>
+								<input
+									id="telegram_bot_token"
+									name="telegram_bot_token"
+									type="password"
+									autoComplete="off"
+									placeholder={telegramKeySet ? "Đã lưu — dán token mới để thay" : "123456:ABC-DEF..."}
+									className="field"
+								/>
+							</div>
+
+							<Field
+								label="Chat ID"
+								name="telegram_chat_id"
+								defaultValue={settings.telegram_chat_id}
+								placeholder="Bấm Dò cuộc trò chuyện để lấy"
+							/>
+
+							<button type="submit" className="btn-primary btn-md">
+								Lưu cấu hình Telegram
+							</button>
+						</Form>
+
+						<div className="space-y-3">
+							{telegramKeySet ? (
+								<>
+									<Link to="?chat=1#telegram" className="btn-outline btn-md">
+										Dò cuộc trò chuyện
+									</Link>
+
+									{telegramError && (
+										<p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+											{telegramError}
+										</p>
+									)}
+
+									{telegramChats.length > 0 && (
+										<Form method="post" className="space-y-2">
+											<input type="hidden" name="intent" value="telegram" />
+											<span className="field-label">Chọn nơi nhận tin</span>
+											<select
+												name="telegram_chat_id"
+												defaultValue={settings.telegram_chat_id}
+												className="field !py-2 text-sm"
+											>
+												{telegramChats.map((chat) => (
+													<option key={chat.id} value={chat.id}>
+														{chat.name} ({chat.id})
+													</option>
+												))}
+											</select>
+											<button type="submit" className="btn-outline btn-md">
+												Dùng cuộc trò chuyện này
+											</button>
+										</Form>
+									)}
+
+									{settings.telegram_chat_id && (
+										<Form method="post">
+											<input type="hidden" name="intent" value="telegram-test" />
+											<button type="submit" className="btn-outline btn-md">
+												Gửi tin thử
+											</button>
+										</Form>
+									)}
+								</>
+							) : (
+								<p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+									Lưu token bot trước, rồi mới dò được cuộc trò chuyện.
+								</p>
+							)}
+						</div>
+					</div>
+				</section>
 
 				{/* --- Email ------------------------------------------------ */}
 				<section id="email" className="card p-4 lg:p-5 xl:col-span-2">

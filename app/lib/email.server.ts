@@ -14,6 +14,7 @@ import { formatVnd } from "./format";
 import type { ShopSettings } from "./settings.server";
 import { vietQrImageUrl } from "./settings.server";
 import { PAYMENT_METHOD_LABEL, type OrderWithItems } from "./types";
+import { logNotification } from "./notify.server";
 
 const API = "https://api.resend.com/emails";
 
@@ -224,26 +225,31 @@ export async function sendOrderEmails(
 ): Promise<void> {
 	const from = settings.email_from.trim();
 
-	const log = (kind: "order_customer" | "order_owner", recipient: string, status: string, error?: string) =>
-		db
-			.prepare(
-				`INSERT INTO email_log (order_id, kind, recipient, status, error)
-				 VALUES (?1, ?2, ?3, ?4, ?5)`,
-			)
-			.bind(order.id, kind, recipient || "—", status, error ?? null)
-			.run()
-			.catch(() => undefined);
+	const log = (
+		audience: "customer" | "owner",
+		recipient: string,
+		status: "sent" | "failed" | "skipped",
+		error?: string,
+	) =>
+		logNotification(db, {
+			orderId: order.id,
+			channel: "email",
+			audience,
+			recipient,
+			status,
+			error,
+		});
 
 	if (!apiKey || !from) {
-		await log("order_customer", order.customer_email ?? "—", "skipped", "Chưa cấu hình Resend");
+		await log("customer", order.customer_email ?? "—", "skipped", "Chưa cấu hình Resend");
 		return;
 	}
 
-	const targets: { kind: "order_customer" | "order_owner"; to: string; subject: string; html: string }[] = [];
+	const targets: { audience: "customer" | "owner"; to: string; subject: string; html: string }[] = [];
 
 	if (order.customer_email) {
 		targets.push({
-			kind: "order_customer",
+			audience: "customer",
 			to: order.customer_email,
 			subject: `Đơn hàng ${order.order_code} — ${settings.shop_name}`,
 			html: customerEmail(order, settings, shopUrl),
@@ -252,7 +258,7 @@ export async function sendOrderEmails(
 
 	if (settings.email_owner.trim()) {
 		targets.push({
-			kind: "order_owner",
+			audience: "owner",
 			to: settings.email_owner.trim(),
 			subject: `Đơn mới ${order.order_code} — ${formatVnd(order.total)}`,
 			html: ownerEmail(order, settings, shopUrl),
@@ -268,9 +274,9 @@ export async function sendOrderEmails(
 				html: target.html,
 				replyTo: settings.shop_email.trim() || undefined,
 			});
-			await log(target.kind, target.to, result.ok ? "sent" : "failed", result.ok ? undefined : result.error);
+			await log(target.audience, target.to, result.ok ? "sent" : "failed", result.ok ? undefined : result.error);
 		} catch (error) {
-			await log(target.kind, target.to, "failed", String(error));
+			await log(target.audience, target.to, "failed", String(error));
 		}
 	}
 }

@@ -11,8 +11,8 @@ import {
 } from "~/lib/cart.server";
 import { createOrder, releaseExpiredOrders, validateDiscountCode } from "~/lib/order.server";
 import { rememberOrder } from "~/lib/recent-orders.server";
-import { getSecret, getSettings, shippingFeeFor } from "~/lib/settings.server";
-import { sendOrderEmails } from "~/lib/email.server";
+import { getSettings, shippingFeeFor } from "~/lib/settings.server";
+import { notifyNewOrder } from "~/lib/notify.server";
 import { getOrderByCode } from "~/lib/db.server";
 import { formatVnd, isValidPhone, normalizePhone } from "~/lib/format";
 import { IMAGE_PLACEHOLDER, imageUrl } from "~/lib/images";
@@ -136,13 +136,18 @@ export async function action({ request, context }: Route.ActionArgs) {
 		return data({ errors: failure }, { status: 400 });
 	}
 
-	// Gửi email chạy nền bằng waitUntil: khách không phải đợi Resend trả lời
-	// mới thấy trang cảm ơn, và mail hỏng cũng không chặn được việc đặt hàng.
+	// Báo đơn chạy nền bằng waitUntil: khách không phải đợi Resend hay Telegram
+	// trả lời mới thấy trang cảm ơn, và kênh nào hỏng cũng không chặn việc đặt hàng.
 	const created = await getOrderByCode(db, result.orderCode);
 	if (created) {
-		const apiKey = await getSecret(db, "resend_api_key", env as unknown as Record<string, unknown>);
 		context.cloudflare.ctx.waitUntil(
-			sendOrderEmails(db, apiKey, settings, created, new URL(request.url).origin),
+			notifyNewOrder(
+				db,
+				env as unknown as Record<string, unknown>,
+				settings,
+				created,
+				new URL(request.url).origin,
+			),
 		);
 	}
 
