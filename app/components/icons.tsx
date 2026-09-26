@@ -224,6 +224,14 @@ export const AlertIcon = (props: IconProps) => (
 	</Icon>
 );
 
+/** Bong bóng chat — dùng cho nút nhắn Zalo ở storefront */
+export const ChatIcon = (props: IconProps) => (
+	<Icon {...props}>
+		<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9.9 9.9 0 0 1-2.8-.4L4 21l1.4-4.1A8.2 8.2 0 0 1 3 11.5 8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5Z" />
+		<path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01" />
+	</Icon>
+);
+
 export const ArrowUpIcon = (props: IconProps) => (
 	<Icon {...props}>
 		<path d="M12 19V5m0 0-6 6m6-6 6 6" />

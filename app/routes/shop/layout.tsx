@@ -8,6 +8,7 @@ import { TARGET_GROUPS, type Category, type TargetGroup } from "~/lib/types";
 import { cn } from "~/lib/format";
 import {
 	CartIcon,
+	ChatIcon,
 	ChevronDownIcon,
 	GridIcon,
 	HomeIcon,
@@ -42,18 +43,49 @@ export default function ShopLayout({ loaderData }: Route.ComponentProps) {
 	const { categories, shopName, cartCount, adminName } = loaderData;
 
 	return (
-		<div className="flex min-h-screen flex-col bg-white">
+		/* pb-20 chừa chỗ cho thanh điều hướng dưới trên mobile. Phải đặt ở bọc
+		   ngoài chứ không phải <main>, nếu không thanh này che mất dòng cuối
+		   của footer. */
+		<div className="flex min-h-screen flex-col bg-white pb-20 md:pb-0">
 			{adminName && <AdminBar name={adminName} />}
 			<Header shopName={shopName} categories={categories} cartCount={cartCount} />
 
-			{/* pb-20 chừa chỗ cho thanh điều hướng dưới trên mobile */}
-			<main className="flex-1 pb-20 md:pb-0">
+			<main className="flex-1">
 				<Outlet />
 			</main>
 
 			<Footer loaderData={loaderData} />
+			<ZaloButton phone={loaderData.shopPhone} />
 			<MobileTabBar cartCount={cartCount} />
 		</div>
+	);
+}
+
+/**
+ * Nút nhắn Zalo nổi ở góc.
+ *
+ * Khách Việt quen hỏi size, chất vải, còn hàng không trước khi đặt. Không có
+ * chỗ nhắn thì họ bỏ đi chứ không tự mò. zalo.me/<số điện thoại> mở thẳng cửa
+ * sổ chat, không tốn gì và không cần Official Account.
+ *
+ * Ẩn khi chủ shop chưa điền hotline trong Cài đặt.
+ */
+function ZaloButton({ phone }: { phone: string }) {
+	if (!phone.trim()) return null;
+
+	return (
+		<a
+			href={`https://zalo.me/${phone.replace(/[^\d]/g, "")}`}
+			target="_blank"
+			rel="noreferrer noopener"
+			aria-label="Nhắn Zalo cho shop"
+			// Trên mobile phải nằm trên thanh tab dưới; lệch phải để không đụng
+			// nút Bộ lọc ở giữa màn hình trang danh sách.
+			className="fixed bottom-20 right-4 z-30 flex items-center gap-2 rounded-full bg-[#0068FF] px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-[#0068FF]/30 transition-transform hover:scale-105 md:bottom-6"
+		>
+			<ChatIcon className="h-5 w-5" />
+			<span className="max-md:sr-only">Nhắn Zalo</span>
+		</a>
 	);
 }
 
