@@ -146,3 +146,20 @@
 		@apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold;
 	}
 }
+
+/* ===========================================================================
+   Khi in phiếu giao hàng: bỏ nền, bỏ lề thừa, để giấy A5 vừa khít
+   =========================================================================== */
+@media print {
+	@page {
+		margin: 8mm;
+	}
+	body {
+		background: #fff;
+	}
+	/* Chrome mặc định bỏ màu nền khi in; khung tiền COD cần giữ viền đậm */
+	* {
+		-webkit-print-color-adjust: exact;
+		print-color-adjust: exact;
+	}
+}

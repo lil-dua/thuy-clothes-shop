@@ -67,7 +67,18 @@ export default function AdminOrders({ loaderData }: Route.ComponentProps) {
 
 	return (
 		<>
-			<PageHeader title="Đơn hàng" description={`${total} đơn khớp bộ lọc hiện tại`} />
+			<PageHeader
+				title="Đơn hàng"
+				description={`${total} đơn khớp bộ lọc hiện tại`}
+				action={
+					<a
+						href={`/admin/don-hang/xuat-csv?${searchParams.toString()}`}
+						className="btn-outline btn-md"
+					>
+						Xuất CSV
+					</a>
+				}
+			/>
 
 			{/* Tab theo trạng thái — thao tác thường dùng nhất của chủ shop */}
 			<div className="no-scrollbar mb-4 flex gap-2 overflow-x-auto">

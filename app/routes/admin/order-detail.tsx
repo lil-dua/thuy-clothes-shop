@@ -80,9 +80,19 @@ export default function AdminOrderDetail({ loaderData, actionData }: Route.Compo
 				title={`Đơn #${order.order_code}`}
 				description={`Đặt lúc ${formatDateTime(order.created_at)}`}
 				action={
-					<Link to="/admin/don-hang" className="btn-ghost btn-md">
-						← Danh sách đơn
-					</Link>
+					<div className="flex gap-2">
+						<Link
+							to={`/admin/don-hang/${order.id}/phieu`}
+							target="_blank"
+							rel="noreferrer"
+							className="btn-outline btn-md"
+						>
+							In phiếu giao hàng
+						</Link>
+						<Link to="/admin/don-hang" className="btn-ghost btn-md">
+							← Danh sách đơn
+						</Link>
+					</div>
 				}
 			/>
 
