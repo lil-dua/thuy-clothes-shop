@@ -180,7 +180,7 @@ export async function listSocialSets(
 async function uploadMedia(
 	apiKey: string,
 	socialSetId: string,
-	file: { name: string; bytes: ArrayBuffer; contentType: string; altText: string },
+	file: { name: string; bytes: ArrayBuffer; altText: string },
 ): Promise<{ ok: true; mediaId: string } | { ok: false; error: string }> {
 	const created = await call<{ media_id: string; upload_url: string }>(
 		apiKey,
@@ -194,10 +194,13 @@ async function uploadMedia(
 
 	const { media_id: mediaId, upload_url: uploadUrl } = created.data;
 
+	// KHÔNG gửi kèm header nào. upload_url ký theo SigV2 (AWSAccessKeyId +
+	// Signature + Expires) và chỉ ký sẵn ba header x-amz-meta-*. Thêm bất kỳ
+	// header nào khác — kể cả Content-Type — đều làm chữ ký lệch và S3 trả 403.
+	// Đây là lý do mọi bài đăng kèm ảnh trước đây đều mất ảnh.
 	const put = await fetch(uploadUrl, {
 		method: "PUT",
 		body: file.bytes,
-		headers: { "Content-Type": file.contentType },
 	}).catch((error) => error as Error);
 
 	if (put instanceof Error) {
@@ -242,14 +245,12 @@ async function createThreadsDraft(
 					// Bắt buộc, dù trang docs chi tiết không nhắc tới. Thiếu nó thì
 					// API trả 422 "platforms.threads.enabled — Field required".
 					enabled: true,
-					posts: [
-						{
-							text,
-							...(mediaIds.length > 0 && {
-								media: mediaIds.map((mediaId) => ({ media_id: mediaId })),
-							}),
-						},
-					],
+					// Bài Threads dùng schema LinkPreviewPost: { text, media_ids[],
+					// hide_link_preview }. Ảnh là MẢNG CHUỖI id — không phải mảng
+					// object { media_id }, dạng đó API trả 422 "Extra inputs are not
+					// permitted". Lấy từ https://api.typefully.com/v2/openapi.json,
+					// trang docs không mô tả đúng.
+					posts: [{ text, ...(mediaIds.length > 0 && { media_ids: mediaIds }) }],
 				},
 			},
 			draft_title: text.split("\n")[0]?.slice(0, 80),
@@ -315,7 +316,6 @@ export async function postProductToThreads(
 		const upload = await uploadMedia(apiKey, socialSetId, {
 			name: image.r2_key.split("/").pop() ?? "anh.jpg",
 			bytes: await object.arrayBuffer(),
-			contentType: object.httpMetadata?.contentType ?? "image/jpeg",
 			altText: image.alt ?? product.name,
 		});
 
