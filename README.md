@@ -84,6 +84,7 @@ Nếu chỉ muốn nạp lại dữ liệu mẫu mà giữ database, dùng `npm 
 | `npm run db:seed` | Nạp dữ liệu mẫu + ảnh minh hoạ (local) |
 | `npm run db:seed-orders` | Tạo đơn hàng mẫu qua đúng luồng thanh toán thật |
 | `npm run db:reset` | Xoá và dựng lại database local từ đầu |
+| `npm run db:backup` | Sao lưu database trên Cloudflare ra `backups/*.sql` |
 | `npm run admin:create -- <user> <pass> "<tên>"` | Tạo / đổi mật khẩu tài khoản quản trị |
 | `npm run db:studio -- "SELECT ..."` | Chạy một câu SQL trên database local |
 | `npm run screenshots` | Chụp lại toàn bộ ảnh trong `screenshots/` |
@@ -138,9 +139,10 @@ app/
 db/
   migrations/      Lịch sử thay đổi schema
   seed.sql         Dữ liệu mẫu
-scripts/           Tạo tài khoản quản trị, nạp dữ liệu mẫu, chụp ảnh README
+scripts/           Tạo tài khoản quản trị, nạp dữ liệu mẫu, sao lưu D1, chụp ảnh README
 screenshots/       Ảnh preview, sinh bằng `npm run screenshots`
 docs/              Bản brief gốc của dự án
+backups/           Bản sao lưu D1 (đã gitignore — chứa thông tin khách hàng)
 ```
 
 Quy ước: file `*.server.ts` chỉ được import **kiểu** (`import type`) từ component.
@@ -291,6 +293,25 @@ Việc gửi chạy nền bằng `ctx.waitUntil`, nên khách không phải đ�
 mới thấy trang cảm ơn. Mail hỏng **không bao giờ** làm hỏng việc đặt hàng — đơn
 đã nằm trong database rồi. Mọi lần gửi, kể cả bỏ qua vì chưa cấu hình, đều ghi
 vào bảng `notification_log` kèm nguyên nhân.
+
+## Sao lưu dữ liệu
+
+D1 gói miễn phí **không có** point-in-time recovery. Một câu `DELETE` chạy nhầm
+vào `--remote`, hay một lần `db:reset` gõ sai cờ, là mất sạch đơn hàng và không
+có đường lấy lại. Bản export `.sql` là lưới an toàn duy nhất, và nó mất vài giây:
+
+```
+npm run db:backup                # dữ liệu thật trên Cloudflare
+npm run db:backup -- --local     # database dưới máy
+npm run db:backup -- --keep 30   # giữ 30 bản thay vì 14
+```
+
+File ra `backups/lumi-shop-db-2026-09-26-1430.sql`. Script tự xoá bản cũ, mặc
+định giữ 14 bản gần nhất. Khôi phục bằng câu lệnh mà script in ra sau khi chạy.
+
+Nên chạy **trước mỗi lần deploy có migration**, và định kỳ hằng tuần. Thư mục
+`backups/` đã nằm trong `.gitignore`: bản sao lưu chứa tên, số điện thoại và
+địa chỉ khách hàng, đừng commit và đừng để lên nơi dùng chung.
 
 ## Trang chính sách
 

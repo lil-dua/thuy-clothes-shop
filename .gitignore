@@ -201,3 +201,7 @@ dist
 ### React Router ###
 .react-router/
 /build/
+
+### Sao lưu D1 ###
+# Bản export chứa tên, số điện thoại và địa chỉ khách hàng — không bao giờ commit
+/backups/
