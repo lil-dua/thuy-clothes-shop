@@ -350,7 +350,12 @@ export default function ProductDetail({ loaderData }: Route.ComponentProps) {
 						</div>
 
 						{/* Nút mua: trên mobile ghim đáy màn hình cho dễ chạm */}
-						<div className="flex gap-3 max-md:fixed max-md:inset-x-0 max-md:bottom-16 max-md:z-30 max-md:border-t max-md:border-ink-100 max-md:bg-white max-md:p-3">
+						{/* data-bottom-bar: app.css dựa vào đây để đẩy nút Zalo lên trên thanh
+					    này. z-40 để nếu có chồng lấn thì nút mua hàng vẫn ở trên. */}
+					<div
+						data-bottom-bar
+						className="flex gap-3 max-md:fixed max-md:inset-x-0 max-md:bottom-16 max-md:z-40 max-md:border-t max-md:border-ink-100 max-md:bg-white max-md:p-3"
+					>
 							<button
 								type="submit"
 								name="redirectTo"

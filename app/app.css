@@ -148,6 +148,19 @@
 }
 
 /* ===========================================================================
+   Nút Zalo nổi
+   Mặc định (trong layout) nút nằm cao để không đè lên thanh mua hàng dính đáy
+   ở trang chi tiết sản phẩm. Trang nào không có thanh đó thì hạ xuống sát
+   thanh tab cho gọn. Viết theo chiều này để trình duyệt không hỗ trợ :has()
+   rơi về vị trí an toàn thay vì vị trí che mất nút "Mua ngay".
+   =========================================================================== */
+@media (max-width: 767px) {
+	body:not(:has([data-bottom-bar])) .zalo-fab {
+		bottom: 5rem;
+	}
+}
+
+/* ===========================================================================
    Khi in phiếu giao hàng: bỏ nền, bỏ lề thừa, để giấy A5 vừa khít
    =========================================================================== */
 @media print {

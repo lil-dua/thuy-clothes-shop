@@ -79,9 +79,13 @@ function ZaloButton({ phone }: { phone: string }) {
 			target="_blank"
 			rel="noreferrer noopener"
 			aria-label="Nhắn Zalo cho shop"
-			// Trên mobile phải nằm trên thanh tab dưới; lệch phải để không đụng
-			// nút Bộ lọc ở giữa màn hình trang danh sách.
-			className="fixed bottom-20 right-4 z-30 flex items-center gap-2 rounded-full bg-[#0068FF] px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-[#0068FF]/30 transition-transform hover:scale-105 md:bottom-6"
+			// Lệch phải để không đụng nút Bộ lọc nằm giữa ở trang danh sách.
+			//
+			// Mặc định nằm cao để vượt qua cả thanh mua hàng dính đáy của trang chi
+			// tiết sản phẩm; app.css hạ xuống sát thanh tab ở những trang không có
+			// thanh đó. Chọn chiều an toàn làm mặc định: trình duyệt cũ không hiểu
+			// :has() thì nút chỉ hơi cao, chứ không che mất nút "Mua ngay".
+			className="zalo-fab fixed bottom-36 right-4 z-30 flex items-center gap-2 rounded-full bg-[#0068FF] px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-[#0068FF]/30 transition-transform hover:scale-105 md:bottom-6"
 		>
 			<ChatIcon className="h-5 w-5" />
 			<span className="max-md:sr-only">Nhắn Zalo</span>
