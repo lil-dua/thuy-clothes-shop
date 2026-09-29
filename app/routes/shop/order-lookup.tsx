@@ -2,7 +2,8 @@ import { Form, data, redirect, useNavigation, useSearchParams } from "react-rout
 import type { Route } from "./+types/order-lookup";
 import { ReceiptIcon } from "~/components/icons";
 import { getOrderByCode } from "~/lib/db.server";
-import { rememberOrder } from "~/lib/recent-orders.server";
+import { getCookieSecret, rememberOrder } from "~/lib/recent-orders.server";
+import { checkRateLimit, clientIp, rateLimitMessage } from "~/lib/rate-limit.server";
 import { normalizePhone } from "~/lib/format";
 
 export function meta() {
@@ -13,15 +14,40 @@ export function meta() {
 }
 
 export async function action({ request, context }: Route.ActionArgs) {
+	const db = context.cloudflare.env.DB;
+
 	const form = await request.formData();
 	const code = String(form.get("code") ?? "").trim().toUpperCase();
 	const phone = normalizePhone(String(form.get("phone") ?? "").trim());
+
+	// Chặn dò cặp (mã đơn, số điện thoại): 10 lần thử / 5 phút cho mỗi IP, VÀ
+	// 10 lần thử / 5 phút cho mỗi mã đơn — nếu không, dò một mã cố định bằng
+	// nhiều IP khác nhau (hoặc quay IPv6) vẫn không bị chặn.
+	const ipRate = await checkRateLimit(
+		db,
+		{ scope: "order-lookup", limit: 10, windowSeconds: 5 * 60 },
+		clientIp(request),
+	);
+	const codeRate = code
+		? await checkRateLimit(
+				db,
+				{ scope: "order-lookup-code", limit: 10, windowSeconds: 5 * 60 },
+				code,
+			)
+		: { allowed: true, retryAfterSeconds: 0 };
+	const rate = !ipRate.allowed ? ipRate : codeRate;
+	if (!rate.allowed) {
+		return data(
+			{ error: rateLimitMessage(rate.retryAfterSeconds) },
+			{ status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } },
+		);
+	}
 
 	if (!code || !phone) {
 		return data({ error: "Vui lòng nhập cả mã đơn và số điện thoại" }, { status: 400 });
 	}
 
-	const order = await getOrderByCode(context.cloudflare.env.DB, code);
+	const order = await getOrderByCode(db, code);
 
 	// Một thông báo chung cho mọi trường hợp sai — không tiết lộ mã nào có thật.
 	if (!order || normalizePhone(order.customer_phone) !== phone) {
@@ -32,8 +58,19 @@ export async function action({ request, context }: Route.ActionArgs) {
 	}
 
 	// Xác minh đúng thì ghi mã vào cookie để lần sau xem không cần nhập lại.
+	const secret = getCookieSecret(context.cloudflare.env as unknown as Record<string, unknown>);
+	const setCookie = await rememberOrder(request, order.order_code, secret);
+	if (!setCookie) {
+		// Fail-closed: thiếu COOKIE_SECRET thì không thể ký cookie xem đơn một
+		// cách an toàn — báo lỗi rõ ràng thay vì âm thầm phát cookie không ký.
+		return data(
+			{ error: "Hệ thống đang bảo trì, vui lòng thử lại sau ít phút." },
+			{ status: 503 },
+		);
+	}
+
 	return redirect(`/don-hang/${order.order_code}`, {
-		headers: { "Set-Cookie": await rememberOrder(request, order.order_code) },
+		headers: { "Set-Cookie": setCookie },
 	});
 }
 

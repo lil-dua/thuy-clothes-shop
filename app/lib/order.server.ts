@@ -8,8 +8,34 @@
 import { sqlNow } from "./format";
 import type { ShopSettings } from "./settings.server";
 import { shippingFeeFor } from "./settings.server";
-import type { CartLineDetail, DiscountCode, OrderStatus, PaymentMethod } from "./types";
+import type {
+	CartLineDetail,
+	DiscountCode,
+	OrderStatus,
+	OrderWithItems,
+	PaymentMethod,
+} from "./types";
 import { ORDER_STATUS_FLOW } from "./types";
+
+export type PublicOrderItem = Omit<OrderWithItems["items"][number], "unit_cost">;
+export type PublicOrder = Omit<OrderWithItems, "admin_note" | "items"> & {
+	items: PublicOrderItem[];
+};
+
+/**
+ * Trang khách xem đơn (`/don-hang/:code`) chỉ được thấy dữ liệu công khai của
+ * đơn hàng của chính họ — `admin_note` (ghi chú nội bộ) và `unit_cost` (giá
+ * nhập từng món) là dữ liệu vận hành/lợi nhuận của shop, không phải của khách.
+ * Dùng cho storefront; admin (`admin/order-detail.tsx`) và `notifyNewOrder`
+ * vẫn dùng bản đầy đủ từ `getOrderByCode`/`getOrderById`.
+ */
+export function toPublicOrder(order: OrderWithItems): PublicOrder {
+	const { admin_note: _adminNote, items, ...rest } = order;
+	return {
+		...rest,
+		items: items.map(({ unit_cost: _unitCost, ...item }) => item),
+	};
+}
 
 export interface CreateOrderInput {
 	items: CartLineDetail[];

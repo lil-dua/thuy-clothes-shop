@@ -4,6 +4,7 @@ import { ProductForm } from "~/components/admin/product-form";
 import { ThreadsPanel, ThreadsResultBanner } from "~/components/admin/threads-panel";
 import { PageHeader } from "~/components/admin/ui";
 import { CheckIcon } from "~/components/icons";
+import { requireAdmin } from "~/lib/auth.server";
 import { getCategories, getProductById } from "~/lib/db.server";
 import { parseProductForm, saveProduct } from "~/lib/product-form.server";
 import { getSecret, getSettings } from "~/lib/settings.server";
@@ -26,6 +27,7 @@ export function meta({ data }: Route.MetaArgs) {
 export async function loader({ params, request, context }: Route.LoaderArgs) {
 	const env = context.cloudflare.env;
 	const db = env.DB;
+	await requireAdmin(db, request);
 	const id = Number.parseInt(params.id, 10);
 	if (!Number.isInteger(id)) throw new Response("Không tìm thấy", { status: 404 });
 
@@ -60,6 +62,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 
 export async function action({ request, params, context }: Route.ActionArgs) {
 	const env = context.cloudflare.env;
+	await requireAdmin(env.DB, request);
 	const id = Number.parseInt(params.id, 10);
 	if (!Number.isInteger(id)) throw new Response("Không tìm thấy", { status: 404 });
 

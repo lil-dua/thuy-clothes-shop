@@ -19,7 +19,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readdirSync, statSync, unlinkSync } from "node:fs";
+import { chmodSync, mkdirSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -104,6 +104,12 @@ if (size === 0) {
 	process.exit(1);
 }
 
+// File chứa tên, số điện thoại, địa chỉ khách hàng (và cả API key nếu chủ
+// shop lưu trong trang Cài đặt thay vì `wrangler secret put`, xem cảnh báo
+// dưới) — giới hạn quyền đọc/ghi chỉ cho chủ tài khoản trên máy này ngay khi
+// tạo xong, không chờ tới lúc ai đó vô tình đổi umask hệ thống.
+chmodSync(target, 0o600);
+
 console.log(`\n✓ ${name} (${humanSize(size)})`);
 
 const total = prune();
@@ -115,5 +121,11 @@ console.log(`
 Khôi phục khi cần:
   npx wrangler d1 execute ${DB_NAME} ${local ? "--local" : "--remote"} --file backups/${name} --yes
 
-Lưu ý: file này chứa thông tin khách hàng. Giữ trong máy hoặc ổ mã hoá,
-không commit lên git, không upload lên nơi dùng chung.`);
+⚠️  File này chứa thông tin khách hàng (tên, số điện thoại, địa chỉ) VÀ mọi
+API key chủ shop đã dán trong trang Cài đặt (Typefully/Resend/Telegram) dưới
+dạng CHỮ THƯỜNG, không mã hoá — xem bảng "settings" trong file .sql. Khuyến
+nghị: chuyển các khoá đó sang \`wrangler secret put\` (biến môi trường luôn
+được ưu tiên hơn giá trị lưu trong DB, xem app/lib/settings.server.ts) để
+chúng KHÔNG còn nằm trong D1 và do đó không còn nằm trong bản backup này.
+Giữ file trong máy hoặc ổ mã hoá, không commit lên git, không upload lên nơi
+dùng chung. Quyền tệp đã giới hạn 0600 (chỉ tài khoản này đọc/ghi được).`);

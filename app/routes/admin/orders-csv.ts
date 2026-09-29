@@ -38,17 +38,23 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 		perPage: 5000,
 	});
 
-	// Lấy chi tiết từng đơn để gộp danh sách sản phẩm vào một cột
+	// Lấy chi tiết từng đơn để gộp danh sách sản phẩm vào một cột.
+	// D1 chỉ nhận tối đa một số lượng tham số bind cố định mỗi câu lệnh — với
+	// shop có nhiều đơn (tới 5000, xem perPage phía trên), một câu IN(...) duy
+	// nhất sẽ vượt giới hạn và lỗi 500. Chia lô để luôn an toàn dù D1 tăng/giảm
+	// giới hạn này trong tương lai.
 	const ids = items.map((order) => order.id);
+	const CHUNK_SIZE = 100;
 	const lines = new Map<number, string[]>();
-	if (ids.length > 0) {
-		const holes = ids.map((_, index) => `?${index + 1}`).join(", ");
+	for (let start = 0; start < ids.length; start += CHUNK_SIZE) {
+		const chunk = ids.slice(start, start + CHUNK_SIZE);
+		const holes = chunk.map((_, index) => `?${index + 1}`).join(", ");
 		const { results } = await db
 			.prepare(
 				`SELECT order_id, product_name, size, color, quantity
 				 FROM order_items WHERE order_id IN (${holes}) ORDER BY id`,
 			)
-			.bind(...ids)
+			.bind(...chunk)
 			.all<{
 				order_id: number;
 				product_name: string;
@@ -116,6 +122,15 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 	});
 }
 
+/**
+ * CSV formula injection: một ô bắt đầu bằng `=`, `+`, `-`, `@`, tab hoặc CR
+ * sẽ bị Excel/Google Sheets hiểu thành công thức khi mở tệp — ví dụ tên khách
+ * `=cmd|' /C calc'!A0` có thể chạy lệnh hệ thống trên máy người mở file. Tên,
+ * ghi chú... đều do khách tự nhập ở trang thanh toán nên phải coi là không
+ * tin cậy. Thêm tiền tố `'` (apostrophe) để các trình bảng tính hiển thị
+ * nguyên văn thay vì thực thi.
+ */
 function escapeCell(value: string): string {
-	return `"${value.replace(/"/g, '""')}"`;
+	const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+	return `"${safe.replace(/"/g, '""')}"`;
 }

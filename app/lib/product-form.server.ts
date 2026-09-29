@@ -8,6 +8,9 @@ import { ensureUniqueSlug } from "./db.server";
 import { parseVnd, slugify } from "./format";
 import { uploadProductImage } from "./images.server";
 
+/** Chặn một lần submit đính kèm quá nhiều ảnh (vô tình hoặc script spam) */
+const MAX_IMAGES_PER_SUBMIT = 12;
+
 export interface VariantInput {
 	id: number | null;
 	size: string;
@@ -294,7 +297,12 @@ async function saveImages(
 	}
 
 	// Thêm ảnh mới
-	const files = form.getAll("images").filter((value): value is File => value instanceof File);
+	const files = form
+		.getAll("images")
+		.filter((value): value is File => value instanceof File && value.size > 0);
+	if (files.length > MAX_IMAGES_PER_SUBMIT) {
+		return `Chỉ được tải tối đa ${MAX_IMAGES_PER_SUBMIT} ảnh trong một lần lưu`;
+	}
 	const maxOrder = await db
 		.prepare(`SELECT COALESCE(MAX(sort_order), -1) AS max_order FROM product_images WHERE product_id = ?1`)
 		.bind(productId)

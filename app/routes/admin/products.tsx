@@ -7,6 +7,7 @@ import {
 	TableWrap,
 } from "~/components/admin/ui";
 import { EditIcon, PlusIcon, SearchIcon, TrashIcon } from "~/components/icons";
+import { requireAdmin } from "~/lib/auth.server";
 import { getCategories, listAdminProducts } from "~/lib/db.server";
 import { getPostedProductIds } from "~/lib/threads.server";
 import { cn, formatVnd } from "~/lib/format";
@@ -31,6 +32,7 @@ const STATUS_STYLE: Record<ProductStatus, string> = {
 
 export async function loader({ request, context }: Route.LoaderArgs) {
 	const db = context.cloudflare.env.DB;
+	await requireAdmin(db, request);
 	const url = new URL(request.url);
 
 	const [result, categories, postedIds] = await Promise.all([
@@ -50,6 +52,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 
 export async function action({ request, context }: Route.ActionArgs) {
 	const db = context.cloudflare.env.DB;
+	await requireAdmin(db, request);
 	const form = await request.formData();
 	const id = Number.parseInt(String(form.get("productId") ?? ""), 10);
 	if (!Number.isInteger(id)) return redirect("/admin/san-pham");

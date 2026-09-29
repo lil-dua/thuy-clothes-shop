@@ -9,6 +9,7 @@ import {
 	TableWrap,
 } from "~/components/admin/ui";
 import { AlertIcon, ChevronRightIcon } from "~/components/icons";
+import { requireAdmin } from "~/lib/auth.server";
 import { listOrders } from "~/lib/db.server";
 import {
 	currentMonth,
@@ -31,6 +32,7 @@ export function meta() {
 
 export async function loader({ request, context }: Route.LoaderArgs) {
 	const db = context.cloudflare.env.DB;
+	await requireAdmin(db, request);
 	const url = new URL(request.url);
 
 	const month = /^\d{4}-\d{2}$/.test(url.searchParams.get("thang") ?? "")

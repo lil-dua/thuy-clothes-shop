@@ -10,6 +10,7 @@ import {
 	serializeCart,
 	serializeDiscountCode,
 	setLineQuantity,
+	toPublicCartItems,
 } from "~/lib/cart.server";
 import { releaseExpiredOrders, validateDiscountCode } from "~/lib/order.server";
 import { getSettings, shippingFeeFor } from "~/lib/settings.server";
@@ -51,7 +52,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 
 	return data(
 		{
-			items,
+			items: toPublicCartItems(items),
 			subtotal,
 			shippingFee,
 			discountAmount,

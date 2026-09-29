@@ -1,0 +1,13 @@
+# Sao chép file này thành `.dev.vars` (đã có trong .gitignore) để chạy `npm run dev`.
+# Production: đặt bằng `wrangler secret put <TÊN_BIẾN>` — KHÔNG đưa giá trị thật vào wrangler.json.
+
+# Bắt buộc — ký cookie lumi_orders (mã đơn hàng khách vừa đặt/tra cứu).
+# Thiếu biến này thì trang xem đơn/tra cứu đơn sẽ luôn từ chối (fail-closed),
+# không âm thầm phát cookie không ký. Sinh một chuỗi ngẫu nhiên dài, ví dụ:
+#   openssl rand -base64 32
+COOKIE_SECRET=doi-chuoi-nay-thanh-gia-tri-ngau-nhien-dai-it-nhat-32-ky-tu
+
+# Không bắt buộc ở local — chỉ cần khi muốn thử tích hợp thật.
+# TYPEFULLY_API_KEY=
+# RESEND_API_KEY=
+# TELEGRAM_BOT_TOKEN=

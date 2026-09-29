@@ -7,6 +7,7 @@ import {
 	StatCard,
 	TableWrap,
 } from "~/components/admin/ui";
+import { requireAdmin } from "~/lib/auth.server";
 import {
 	getLowStockVariants,
 	getPeriodStats,
@@ -30,6 +31,7 @@ function todayVn(offsetDays = 0): string {
 
 export async function loader({ request, context }: Route.LoaderArgs) {
 	const db = context.cloudflare.env.DB;
+	await requireAdmin(db, request);
 	const url = new URL(request.url);
 
 	const isDate = (value: string | null) => Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));

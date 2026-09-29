@@ -6,6 +6,7 @@ import {
 	PaymentStatusBadge,
 } from "~/components/admin/ui";
 import { CheckIcon } from "~/components/icons";
+import { requireAdmin } from "~/lib/auth.server";
 import { getOrderById } from "~/lib/db.server";
 import { markOrderPaid, updateOrderStatus } from "~/lib/order.server";
 import { formatDateTime, formatVnd } from "~/lib/format";
@@ -24,7 +25,8 @@ export function meta({ data }: Route.MetaArgs) {
 	];
 }
 
-export async function loader({ params, context }: Route.LoaderArgs) {
+export async function loader({ request, params, context }: Route.LoaderArgs) {
+	await requireAdmin(context.cloudflare.env.DB, request);
 	const id = Number.parseInt(params.id, 10);
 	if (!Number.isInteger(id)) throw new Response("Không tìm thấy", { status: 404 });
 
@@ -42,6 +44,7 @@ export async function loader({ params, context }: Route.LoaderArgs) {
 
 export async function action({ request, params, context }: Route.ActionArgs) {
 	const db = context.cloudflare.env.DB;
+	await requireAdmin(db, request);
 	const id = Number.parseInt(params.id, 10);
 	if (!Number.isInteger(id)) throw new Response("Không tìm thấy", { status: 404 });
 

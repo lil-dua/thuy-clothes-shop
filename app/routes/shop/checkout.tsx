@@ -8,9 +8,11 @@ import {
 	readDiscountCode,
 	serializeCart,
 	serializeDiscountCode,
+	toPublicCartItems,
 } from "~/lib/cart.server";
 import { createOrder, releaseExpiredOrders, validateDiscountCode } from "~/lib/order.server";
-import { rememberOrder } from "~/lib/recent-orders.server";
+import { getCookieSecret, rememberOrder } from "~/lib/recent-orders.server";
+import { checkRateLimitSoft, clientIp, rateLimitMessage } from "~/lib/rate-limit.server";
 import { getSettings, shippingFeeFor } from "~/lib/settings.server";
 import { notifyNewOrder } from "~/lib/notify.server";
 import { getOrderByCode } from "~/lib/db.server";
@@ -44,7 +46,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 	const shippingFee = shippingFeeFor(settings, subtotal);
 
 	return {
-		items,
+		items: toPublicCartItems(items),
 		subtotal,
 		discountAmount,
 		discountCode: discount?.ok ? discountCode : null,
@@ -91,6 +93,23 @@ export async function action({ request, context }: Route.ActionArgs) {
 	}
 
 	// --- Đặt hàng ----------------------------------------------------------
+	// Chặn spam đặt đơn (kéo theo spam email Resend / tin Telegram):
+	// 8 đơn / 10 phút cho mỗi IP — đủ rộng cho khách đặt nhiều đơn liền nhau.
+	// Fail-open: nếu D1 lỗi (hoặc migration 0007 chưa áp) thì cho qua, không
+	// làm sập luồng đặt hàng thật vì lỗi ở tính năng chống spam.
+	const orderRate = await checkRateLimitSoft(
+		db,
+		{ scope: "checkout-order", limit: 8, windowSeconds: 10 * 60 },
+		clientIp(request),
+	);
+	if (!orderRate.allowed) {
+		const failure: Record<string, string> = { form: rateLimitMessage(orderRate.retryAfterSeconds) };
+		return data(
+			{ errors: failure },
+			{ status: 429, headers: { "Retry-After": String(orderRate.retryAfterSeconds) } },
+		);
+	}
+
 	const customerName = String(form.get("customerName") ?? "").trim();
 	const rawPhone = String(form.get("customerPhone") ?? "").trim();
 	const customerAddress = String(form.get("customerAddress") ?? "").trim();
@@ -100,13 +119,18 @@ export async function action({ request, context }: Route.ActionArgs) {
 
 	const errors: Record<string, string> = {};
 	if (customerName.length < 2) errors.customerName = "Vui lòng nhập họ tên người nhận";
+	else if (customerName.length > 100) errors.customerName = "Họ tên quá dài (tối đa 100 ký tự)";
 	if (!isValidPhone(rawPhone)) errors.customerPhone = "Số điện thoại không hợp lệ (10 số)";
 	if (customerAddress.length < 8) errors.customerAddress = "Vui lòng nhập địa chỉ đầy đủ";
+	else if (customerAddress.length > 300) {
+		errors.customerAddress = "Địa chỉ quá dài (tối đa 300 ký tự)";
+	}
 	// Email không bắt buộc, nhưng đã nhập thì phải đúng dạng — gõ sai là mất
 	// luôn thư xác nhận mà khách không biết vì sao.
-	if (customerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(customerEmail)) {
+	if (customerEmail && (customerEmail.length > 200 || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(customerEmail))) {
 		errors.customerEmail = "Email không hợp lệ";
 	}
+	if (note && note.length > 500) errors.note = "Ghi chú quá dài (tối đa 500 ký tự)";
 	if (!["cod", "bank_transfer", "momo"].includes(paymentMethod)) {
 		errors.paymentMethod = "Vui lòng chọn phương thức thanh toán";
 	}
@@ -156,7 +180,13 @@ export async function action({ request, context }: Route.ActionArgs) {
 	const headers = new Headers();
 	headers.append("Set-Cookie", await serializeCart([]));
 	headers.append("Set-Cookie", await serializeDiscountCode(null));
-	headers.append("Set-Cookie", await rememberOrder(request, result.orderCode));
+
+	const secret = getCookieSecret(env as unknown as Record<string, unknown>);
+	const orderCookie = await rememberOrder(request, result.orderCode, secret);
+	// Đơn đã tạo thành công rồi — thiếu COOKIE_SECRET không được phép làm hỏng
+	// luồng đặt hàng. Khách chỉ mất tiện ích "xem lại đơn không cần nhập SĐT",
+	// vẫn tra cứu lại được bằng mã đơn + số điện thoại ở /tra-cuu-don-hang.
+	if (orderCookie) headers.append("Set-Cookie", orderCookie);
 
 	return redirect(`/don-hang/${result.orderCode}`, { headers });
 }
@@ -209,6 +239,7 @@ export default function Checkout({ loaderData, actionData }: Route.ComponentProp
 								placeholder="Nguyễn Thị Hoa"
 								error={errors.customerName}
 								autoComplete="name"
+								maxLength={100}
 								required
 							/>
 							<Field
@@ -228,6 +259,7 @@ export default function Checkout({ loaderData, actionData }: Route.ComponentProp
 								placeholder="de-nhan-xac-nhan-don@email.com"
 								error={errors.customerEmail}
 								autoComplete="email"
+								maxLength={200}
 								hint="Không bắt buộc — có email thì shop gửi xác nhận đơn cho bạn"
 							/>
 							<div>
@@ -239,6 +271,7 @@ export default function Checkout({ loaderData, actionData }: Route.ComponentProp
 									name="customerAddress"
 									rows={3}
 									required
+									maxLength={300}
 									autoComplete="street-address"
 									placeholder="Số nhà, đường, phường/xã, quận/huyện, tỉnh/thành phố"
 									className={`field ${errors.customerAddress ? "field-error" : ""}`}
@@ -255,9 +288,11 @@ export default function Checkout({ loaderData, actionData }: Route.ComponentProp
 									id="note"
 									name="note"
 									rows={2}
+									maxLength={500}
 									placeholder="Giao giờ hành chính, gọi trước khi giao..."
-									className="field"
+									className={`field ${errors.note ? "field-error" : ""}`}
 								/>
+								{errors.note && <p className="mt-1 text-xs text-red-600">{errors.note}</p>}
 							</div>
 						</div>
 					</section>

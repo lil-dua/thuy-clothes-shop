@@ -59,6 +59,9 @@ export async function getReviewableItems(
 
 export type SubmitResult = { ok: true } | { ok: false; error: string };
 
+/** Chặn đánh giá quá dài — không có ô nhập nào trong UI dài tới mức này */
+const MAX_REVIEW_CONTENT_LENGTH = 2000;
+
 /**
  * Ghi đánh giá cho một sản phẩm trong đơn.
  *
@@ -84,6 +87,9 @@ export async function submitReview(
 ): Promise<SubmitResult> {
 	if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
 		return { ok: false, error: "Vui lòng chọn số sao từ 1 đến 5" };
+	}
+	if (content && content.length > MAX_REVIEW_CONTENT_LENGTH) {
+		return { ok: false, error: `Nội dung đánh giá tối đa ${MAX_REVIEW_CONTENT_LENGTH} ký tự` };
 	}
 
 	// Chốt chặn phía server: sản phẩm phải thực sự nằm trong đơn này, và đơn

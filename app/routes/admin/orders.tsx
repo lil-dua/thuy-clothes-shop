@@ -9,6 +9,7 @@ import {
 	TableWrap,
 } from "~/components/admin/ui";
 import { SearchIcon } from "~/components/icons";
+import { requireAdmin } from "~/lib/auth.server";
 import { listOrders } from "~/lib/db.server";
 import { cn, formatDateTime, formatVnd } from "~/lib/format";
 import { ORDER_STATUS_LABEL, PAYMENT_METHOD_LABEL, type OrderStatus } from "~/lib/types";
@@ -19,6 +20,7 @@ export function meta() {
 
 export async function loader({ request, context }: Route.LoaderArgs) {
 	const db = context.cloudflare.env.DB;
+	await requireAdmin(db, request);
 	const url = new URL(request.url);
 	const orderStatus = url.searchParams.get("trang-thai") || null;
 

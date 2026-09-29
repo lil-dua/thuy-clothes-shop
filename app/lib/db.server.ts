@@ -103,6 +103,15 @@ const SORT_SQL: Record<ProductSort, string> = {
 };
 
 /**
+ * Số lượng size/màu tối đa chấp nhận trong một lượt lọc. Bộ lọc thật chỉ có
+ * vài chục giá trị khả dĩ (facets), nhưng `searchParams.getAll()` cho phép
+ * URL truyền vào bao nhiêu giá trị cũng được — không chặn thì một URL cố ý
+ * lặp `&size=...` hàng nghìn lần sẽ vượt giới hạn tham số của D1 và làm
+ * truy vấn lỗi 500.
+ */
+const MAX_FACET_VALUES = 20;
+
+/**
  * Dựng mệnh đề WHERE + tham số từ bộ lọc.
  * Trả về đoạn SQL bắt đầu bằng "WHERE ..." và mảng tham số theo đúng thứ tự.
  */
@@ -134,7 +143,7 @@ function buildProductWhere(filters: ProductFilters): {
 		clauses.push(`(p.name LIKE ?${params.length} COLLATE NOCASE)`);
 	}
 	if (filters.sizes?.length) {
-		const holes = filters.sizes.map((size) => {
+		const holes = filters.sizes.slice(0, MAX_FACET_VALUES).map((size) => {
 			params.push(size);
 			return `?${params.length}`;
 		});
@@ -144,7 +153,7 @@ function buildProductWhere(filters: ProductFilters): {
 		);
 	}
 	if (filters.colors?.length) {
-		const holes = filters.colors.map((color) => {
+		const holes = filters.colors.slice(0, MAX_FACET_VALUES).map((color) => {
 			params.push(color);
 			return `?${params.length}`;
 		});

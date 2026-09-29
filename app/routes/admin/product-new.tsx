@@ -2,6 +2,7 @@ import { Link, data, redirect } from "react-router";
 import type { Route } from "./+types/product-new";
 import { ProductForm } from "~/components/admin/product-form";
 import { PageHeader } from "~/components/admin/ui";
+import { requireAdmin } from "~/lib/auth.server";
 import { getCategories, getProductById } from "~/lib/db.server";
 import { parseProductForm, saveProduct } from "~/lib/product-form.server";
 import { getSecret, getSettings, hasSecret } from "~/lib/settings.server";
@@ -11,9 +12,10 @@ export function meta() {
 	return [{ title: "Thêm sản phẩm — Lumi Admin" }, { name: "robots", content: "noindex" }];
 }
 
-export async function loader({ context }: Route.LoaderArgs) {
+export async function loader({ request, context }: Route.LoaderArgs) {
 	const env = context.cloudflare.env;
 	const db = env.DB;
+	await requireAdmin(db, request);
 	const envRecord = env as unknown as Record<string, unknown>;
 
 	const [categories, settings, apiKeySet] = await Promise.all([
@@ -33,6 +35,7 @@ export async function loader({ context }: Route.LoaderArgs) {
 
 export async function action({ request, context }: Route.ActionArgs) {
 	const env = context.cloudflare.env;
+	await requireAdmin(env.DB, request);
 	const form = await request.formData();
 	const { values, errors } = parseProductForm(form);
 

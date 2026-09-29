@@ -4,8 +4,8 @@ import { CheckIcon, PackageIcon, TruckIcon } from "~/components/icons";
 import { getOrderByCode } from "~/lib/db.server";
 import { getReviewableItems, submitReview } from "~/lib/reviews.server";
 import { ReviewSection } from "~/components/shop/review-form";
-import { releaseExpiredOrders } from "~/lib/order.server";
-import { canViewOrder } from "~/lib/recent-orders.server";
+import { releaseExpiredOrders, toPublicOrder } from "~/lib/order.server";
+import { canViewOrder, getCookieSecret } from "~/lib/recent-orders.server";
 import { getSettings, vietQrImageUrl } from "~/lib/settings.server";
 import { cn, formatDateTime, formatVnd } from "~/lib/format";
 import { IMAGE_PLACEHOLDER, imageUrl } from "~/lib/images";
@@ -30,7 +30,8 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 	const code = params.code.toUpperCase();
 
 	// Chỉ người vừa đặt (hoặc đã xác minh SĐT ở trang tra cứu) mới xem được.
-	if (!(await canViewOrder(request, code))) {
+	const secret = getCookieSecret(context.cloudflare.env as unknown as Record<string, unknown>);
+	if (!(await canViewOrder(request, code, secret))) {
 		throw redirect(`/tra-cuu-don-hang?ma=${encodeURIComponent(code)}`);
 	}
 
@@ -47,7 +48,8 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 		order.payment_status === "pending" && order.order_status !== "cancelled";
 
 	return {
-		order,
+		// Bỏ admin_note + unit_cost trước khi trả ra client — đây là trang khách xem đơn.
+		order: toPublicOrder(order),
 		reviewable,
 		settings: {
 			bank_id: settings.bank_id,
@@ -71,7 +73,8 @@ export async function action({ params, request, context }: Route.ActionArgs) {
 
 	// Cùng chốt chặn như loader: không có cookie hoặc chưa xác minh số điện
 	// thoại thì không gửi đánh giá hộ người khác được.
-	if (!(await canViewOrder(request, code))) {
+	const secret = getCookieSecret(context.cloudflare.env as unknown as Record<string, unknown>);
+	if (!(await canViewOrder(request, code, secret))) {
 		throw redirect(`/tra-cuu-don-hang?ma=${encodeURIComponent(code)}`);
 	}
 

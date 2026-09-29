@@ -12,7 +12,7 @@
 
 import { webcrypto as crypto } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -73,6 +73,12 @@ const dir = mkdtempSync(join(tmpdir(), "lumi-admin-"));
 const file = join(dir, "create-admin.sql");
 writeFileSync(file, sql, { mode: 0o600 });
 
+// File .sql tạm chứa hash mật khẩu (không phải mật khẩu gốc, nhưng vẫn là dữ
+// liệu nhạy cảm) — phải xoá cả thư mục tạm sau khi wrangler đọc xong, dù
+// lệnh thành công hay thất bại. `finally` bảo đảm chạy trước khi tiến trình
+// kết thúc (không dùng process.exit() ngay trong catch, vì lệnh đó sẽ tắt
+// tiến trình trước khi finally kịp chạy).
+let failed = false;
 try {
 	execFileSync(
 		"npx",
@@ -93,10 +99,13 @@ try {
 	);
 	console.log("Đăng nhập tại /admin/dang-nhap");
 } catch (error) {
+	failed = true;
 	console.error("Không chạy được wrangler:");
 	console.error(error.stderr?.toString() ?? error.message);
-	process.exit(1);
+} finally {
+	rmSync(dir, { recursive: true, force: true });
 }
+if (failed) process.exit(1);
 
 /** Cùng định dạng với verifyPassword trong app/lib/auth.server.ts */
 async function hashPassword(plain) {

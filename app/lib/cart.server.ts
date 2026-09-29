@@ -175,6 +175,21 @@ export function serializeDiscountCode(code: string | null): Promise<string> {
 		: discountCookie.serialize("", { maxAge: 0 });
 }
 
+export type PublicCartLineDetail = Omit<CartLineDetail, "unitCost">;
+
+/**
+ * Loại bỏ `unitCost` (giá nhập) trước khi trả dữ liệu ra loader.
+ *
+ * `loadCartDetails` phải giữ `unitCost` vì `createOrder` cần snapshot giá
+ * nhập lúc đặt hàng để tính lợi nhuận (chỉ admin xem). Nhưng route giỏ hàng
+ * / thanh toán trả `items` thẳng ra loader data — dữ liệu này đi kèm HTML
+ * xuống MỌI khách xem trang, nên giá nhập (thông tin kinh doanh nội bộ,
+ * không phải PII) sẽ lộ ra ngoài nếu không cắt bỏ trước khi trả về.
+ */
+export function toPublicCartItems(items: CartLineDetail[]): PublicCartLineDetail[] {
+	return items.map(({ unitCost: _unitCost, ...rest }) => rest);
+}
+
 export function cartCount(lines: CartLine[]): number {
 	return lines.reduce((sum, line) => sum + line.quantity, 0);
 }

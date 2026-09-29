@@ -98,6 +98,54 @@ export function buildCaption(
 // Gọi API
 // ---------------------------------------------------------------------------
 
+/** Không chờ API ngoài vô thời hạn — một lượt gọi treo sẽ giữ luôn cả request đăng bài */
+const FETCH_TIMEOUT_MS = 15_000;
+
+/**
+ * Chặn SSRF: `uploadMedia` phải `fetch()` một URL do Typefully TRẢ VỀ (không
+ * biết trước host, vì đó là link S3 ký sẵn) — nếu API của họ từng bị lừa/bug
+ * trả về một URL nội bộ (địa chỉ private, localhost, ...), Worker sẽ vô tình
+ * gọi tới hạ tầng nội bộ kèm theo dữ liệu ảnh. Chỉ chấp nhận HTTPS và chặn
+ * các host rõ ràng không phải máy chủ công khai trên Internet.
+ *
+ * Ngoài blocklist IP/localhost, thêm một lớp allowlist theo host: chỉ chấp
+ * nhận `*.amazonaws.com` (Typefully lưu media lên S3 — mọi `upload_url` quan
+ * sát được đều là link S3 ký sẵn dạng `<bucket>.s3.<region>.amazonaws.com`)
+ * hoặc `*.typefully.com` (phòng khi họ đổi sang lưu trên hạ tầng của chính
+ * họ). KHÔNG có tài liệu chính thức của Typefully liệt kê domain lưu trữ nên
+ * đây là suy luận từ quan sát thực tế response API — nếu Typefully đổi nhà
+ * cung cấp lưu trữ, `uploadMedia` sẽ trả lỗi rõ ràng ("địa chỉ tải ảnh không
+ * hợp lệ") thay vì đăng thiếu ảnh, và cần cập nhật allowlist này.
+ */
+function isSafeExternalUrl(rawUrl: string): boolean {
+	let url: URL;
+	try {
+		url = new URL(rawUrl);
+	} catch {
+		return false;
+	}
+	if (url.protocol !== "https:") return false;
+
+	const host = url.hostname.toLowerCase();
+	if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local")) {
+		return false;
+	}
+	// IPv4 literal — chặn loopback/private/link-local (RFC 1918 + 127/8 + 169.254/16)
+	const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+	if (ipv4) {
+		const [a, b] = [Number(ipv4[1]), Number(ipv4[2])];
+		if (a === 127 || a === 10 || a === 0 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254)) {
+			return false;
+		}
+	}
+	// IPv6 loopback/link-local dạng thu gọn
+	if (host === "::1" || host.startsWith("fe80:") || host.startsWith("fc") || host.startsWith("fd")) {
+		return false;
+	}
+
+	return host.endsWith(".amazonaws.com") || host.endsWith(".typefully.com");
+}
+
 async function call<T>(
 	apiKey: string,
 	path: string,
@@ -112,6 +160,7 @@ async function call<T>(
 				"Content-Type": "application/json",
 				...init.headers,
 			},
+			signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
 		});
 	} catch (error) {
 		return { ok: false, error: `Không kết nối được Typefully: ${String(error)}` };
@@ -194,17 +243,29 @@ async function uploadMedia(
 
 	const { media_id: mediaId, upload_url: uploadUrl } = created.data;
 
+	if (!isSafeExternalUrl(uploadUrl)) {
+		return { ok: false, error: "Typefully trả về địa chỉ tải ảnh không hợp lệ" };
+	}
+
 	// KHÔNG gửi kèm header nào. upload_url ký theo SigV2 (AWSAccessKeyId +
 	// Signature + Expires) và chỉ ký sẵn ba header x-amz-meta-*. Thêm bất kỳ
 	// header nào khác — kể cả Content-Type — đều làm chữ ký lệch và S3 trả 403.
 	// Đây là lý do mọi bài đăng kèm ảnh trước đây đều mất ảnh.
+	// `redirect: "manual"` — không tự động theo 3xx: S3 hợp lệ không bao giờ
+	// redirect cho PUT ký sẵn, nên một redirect chỉ có thể là dấu hiệu bất
+	// thường (ví dụ vòng qua allowlist ở trên tới một host khác chưa kiểm).
 	const put = await fetch(uploadUrl, {
 		method: "PUT",
 		body: file.bytes,
+		redirect: "manual",
+		signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
 	}).catch((error) => error as Error);
 
 	if (put instanceof Error) {
 		return { ok: false, error: `Không tải được ảnh lên: ${put.message}` };
+	}
+	if (put.type === "opaqueredirect" || (put.status >= 300 && put.status < 400)) {
+		return { ok: false, error: "Không tải được ảnh lên: máy chủ trả về redirect không mong đợi" };
 	}
 	if (!put.ok) {
 		return { ok: false, error: `Không tải được ảnh lên (mã ${put.status})` };

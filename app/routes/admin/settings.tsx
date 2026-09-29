@@ -129,9 +129,15 @@ export async function action({ request, context }: Route.ActionArgs) {
 		const token = String(form.get("telegram_bot_token") ?? "").trim();
 		if (token) await setSecret(db, "telegram_bot_token", token);
 
-		await updateSettings(db, {
-			telegram_chat_id: String(form.get("telegram_chat_id") ?? "").trim(),
-		});
+		const chatId = String(form.get("telegram_chat_id") ?? "").trim();
+		// Chat ID Telegram luôn là số (âm với nhóm/kênh) hoặc @username kênh —
+		// không có dạng nào khác. Chặn ký tự lạ/newline trước khi lưu, vì giá
+		// trị này gửi thẳng vào JSON body của lời gọi Telegram API.
+		if (chatId && !/^-?\d{1,20}$/.test(chatId) && !/^@[\w.]{4,32}$/.test(chatId)) {
+			return data({ error: "Chat ID không hợp lệ" }, { status: 400 });
+		}
+
+		await updateSettings(db, { telegram_chat_id: chatId });
 		return redirect("/admin/cai-dat?chat=1#telegram");
 	}
 
@@ -160,10 +166,22 @@ export async function action({ request, context }: Route.ActionArgs) {
 		const key = String(form.get("resend_api_key") ?? "").trim();
 		if (key) await setSecret(db, "resend_api_key", key);
 
-		await updateSettings(db, {
-			email_from: String(form.get("email_from") ?? "").trim(),
-			email_owner: String(form.get("email_owner") ?? "").trim(),
-		});
+		const emailFrom = String(form.get("email_from") ?? "").trim();
+		const emailOwner = String(form.get("email_owner") ?? "").trim();
+
+		// Cả hai giá trị đi thẳng vào JSON body gửi cho Resend — chặn ký tự
+		// xuống dòng/điều khiển và ép đúng khuôn email (hoặc "Tên <email>" cho
+		// địa chỉ gửi) để tránh cấu hình sai lặng lẽ hoặc chèn dữ liệu lạ.
+		const EMAIL_RE = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]{2,}$/;
+		const FROM_RE = /^(?:[^<>\n\r]{0,100}<)?[^\s@<>]+@[^\s@<>]+\.[^\s@<>]{2,}>?$/;
+		if (emailFrom && (emailFrom.length > 150 || !FROM_RE.test(emailFrom))) {
+			return data({ error: "Địa chỉ gửi không hợp lệ" }, { status: 400 });
+		}
+		if (emailOwner && (emailOwner.length > 150 || !EMAIL_RE.test(emailOwner))) {
+			return data({ error: "Email nhận báo đơn không hợp lệ" }, { status: 400 });
+		}
+
+		await updateSettings(db, { email_from: emailFrom, email_owner: emailOwner });
 		return data({ message: "Đã lưu cấu hình email" });
 	}
 

@@ -2,6 +2,7 @@ import { Form, data, redirect } from "react-router";
 import type { Route } from "./+types/discounts";
 import { EmptyState, PageHeader, TableWrap } from "~/components/admin/ui";
 import { TrashIcon } from "~/components/icons";
+import { requireAdmin } from "~/lib/auth.server";
 import { cn, formatDate, formatVnd, parseVnd } from "~/lib/format";
 import type { DiscountCode } from "~/lib/types";
 
@@ -9,7 +10,8 @@ export function meta() {
 	return [{ title: "Khuyến mãi — Lumi Admin" }, { name: "robots", content: "noindex" }];
 }
 
-export async function loader({ context }: Route.LoaderArgs) {
+export async function loader({ request, context }: Route.LoaderArgs) {
+	await requireAdmin(context.cloudflare.env.DB, request);
 	const { results } = await context.cloudflare.env.DB.prepare(
 		`SELECT * FROM discount_codes ORDER BY is_active DESC, created_at DESC`,
 	).all<DiscountCode>();
@@ -18,6 +20,7 @@ export async function loader({ context }: Route.LoaderArgs) {
 
 export async function action({ request, context }: Route.ActionArgs) {
 	const db = context.cloudflare.env.DB;
+	await requireAdmin(db, request);
 	const form = await request.formData();
 	const intent = String(form.get("intent") ?? "");
 
@@ -46,6 +49,11 @@ export async function action({ request, context }: Route.ActionArgs) {
 			? Number.parseInt(rawValue.replace(/[^\d]/g, ""), 10) || 0
 			: parseVnd(rawValue);
 
+	const startsAt = String(form.get("startsAt") ?? "").trim();
+	const endsAt = String(form.get("endsAt") ?? "").trim();
+	const rawUsageLimit = String(form.get("usageLimit") ?? "").trim();
+	const usageLimitParsed = rawUsageLimit ? Number.parseInt(rawUsageLimit, 10) : null;
+
 	const errors: Record<string, string> = {};
 	if (!/^[A-Z0-9_-]{3,20}$/.test(code)) {
 		errors.code = "Mã gồm 3–20 ký tự chữ, số, gạch ngang";
@@ -53,6 +61,14 @@ export async function action({ request, context }: Route.ActionArgs) {
 	if (discountValue <= 0) errors.discountValue = "Giá trị giảm phải lớn hơn 0";
 	if (discountType === "percent" && discountValue > 100) {
 		errors.discountValue = "Giảm theo % không thể vượt quá 100";
+	}
+	// Ngày hiệu lực: cả hai đều là chuỗi "YYYY-MM-DD" do <input type="date">
+	// sinh ra nên so sánh chuỗi là đủ, không cần parse Date.
+	if (startsAt && endsAt && startsAt > endsAt) {
+		errors.endsAt = "Ngày kết thúc phải sau ngày bắt đầu";
+	}
+	if (rawUsageLimit && (!Number.isInteger(usageLimitParsed) || (usageLimitParsed as number) <= 0)) {
+		errors.usageLimit = "Giới hạn lượt dùng phải là số nguyên lớn hơn 0";
 	}
 	if (Object.keys(errors).length > 0) return data({ errors }, { status: 400 });
 
@@ -79,9 +95,9 @@ export async function action({ request, context }: Route.ActionArgs) {
 			discountValue,
 			parseVnd(String(form.get("maxDiscount") ?? "")) || null,
 			parseVnd(String(form.get("minOrder") ?? "")),
-			Number.parseInt(String(form.get("usageLimit") ?? ""), 10) || null,
-			String(form.get("startsAt") ?? "") || null,
-			String(form.get("endsAt") ?? "") || null,
+			usageLimitParsed,
+			startsAt || null,
+			endsAt || null,
 		)
 		.run();
 
@@ -195,9 +211,15 @@ export default function AdminDiscounts({ loaderData, actionData }: Route.Compone
 								<label htmlFor="endsAt" className="field-label">
 									Kết thúc
 								</label>
-								<input id="endsAt" name="endsAt" type="date" className="field" />
+								<input
+									id="endsAt"
+									name="endsAt"
+									type="date"
+									className={`field ${errors.endsAt ? "field-error" : ""}`}
+								/>
 							</div>
 						</div>
+						{errors.endsAt && <p className="-mt-2 text-xs text-red-600">{errors.endsAt}</p>}
 
 						<div>
 							<label htmlFor="usageLimit" className="field-label">
@@ -209,8 +231,11 @@ export default function AdminDiscounts({ loaderData, actionData }: Route.Compone
 								type="number"
 								min={1}
 								placeholder="Để trống = không giới hạn"
-								className="field"
+								className={`field ${errors.usageLimit ? "field-error" : ""}`}
 							/>
+							{errors.usageLimit && (
+								<p className="mt-1 text-xs text-red-600">{errors.usageLimit}</p>
+							)}
 						</div>
 
 						<button type="submit" className="btn-primary btn-md w-full">

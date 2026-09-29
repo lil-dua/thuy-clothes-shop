@@ -2,6 +2,7 @@ import { Form, Link, redirect, useSearchParams } from "react-router";
 import type { Route } from "./+types/reviews";
 import { EmptyState, PageHeader, Pagination, TableWrap } from "~/components/admin/ui";
 import { StarIcon, TrashIcon } from "~/components/icons";
+import { requireAdmin } from "~/lib/auth.server";
 import { cn, formatDateTime } from "~/lib/format";
 import { deleteReview, listReviews, setReviewVisible } from "~/lib/reviews.server";
 
@@ -10,6 +11,7 @@ export function meta() {
 }
 
 export async function loader({ request, context }: Route.LoaderArgs) {
+	await requireAdmin(context.cloudflare.env.DB, request);
 	const url = new URL(request.url);
 	const visible = url.searchParams.get("hien-thi");
 
@@ -24,6 +26,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 
 export async function action({ request, context }: Route.ActionArgs) {
 	const db = context.cloudflare.env.DB;
+	await requireAdmin(db, request);
 	const form = await request.formData();
 	const id = Number.parseInt(String(form.get("reviewId") ?? ""), 10);
 	if (!Number.isInteger(id)) return redirect("/admin/danh-gia");

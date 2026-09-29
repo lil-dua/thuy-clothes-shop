@@ -1,5 +1,6 @@
 import { Link } from "react-router";
 import type { Route } from "./+types/order-slip";
+import { requireAdmin } from "~/lib/auth.server";
 import { getOrderById } from "~/lib/db.server";
 import { getSettings } from "~/lib/settings.server";
 import { formatDateTime, formatVnd } from "~/lib/format";
@@ -19,8 +20,9 @@ export function meta({ data }: Route.MetaArgs) {
 	];
 }
 
-export async function loader({ params, context }: Route.LoaderArgs) {
+export async function loader({ request, params, context }: Route.LoaderArgs) {
 	const db = context.cloudflare.env.DB;
+	await requireAdmin(db, request);
 	const id = Number.parseInt(params.id, 10);
 	if (!Number.isInteger(id)) throw new Response("Không tìm thấy", { status: 404 });
 

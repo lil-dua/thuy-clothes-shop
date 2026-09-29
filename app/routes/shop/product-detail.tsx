@@ -62,8 +62,14 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 	// "hết hàng" vì một đơn chuyển khoản bị bỏ dở 30 phút trước.
 	await releaseExpiredOrders(db);
 
-	const product = await getProductBySlug(db, params.slug);
-	if (!product) throw new Response("Không tìm thấy sản phẩm", { status: 404 });
+	const fullProduct = await getProductBySlug(db, params.slug);
+	if (!fullProduct) throw new Response("Không tìm thấy sản phẩm", { status: 404 });
+
+	// getProductBySlug SELECT p.* nên kéo theo cost_price (giá nhập) — dữ liệu
+	// kinh doanh nội bộ, không phải của khách. Loader trả thẳng `product`
+	// xuống client (dữ liệu hydrate đi kèm HTML), nên phải cắt bỏ trước khi
+	// trả về, chỉ admin (qua getProductById, đã có requireAdmin) mới thấy được.
+	const { cost_price: _costPrice, ...product } = fullProduct;
 
 	const [related, reviews, settings] = await Promise.all([
 		getRelatedProducts(db, product.id, product.category_id),

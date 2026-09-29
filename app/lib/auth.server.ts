@@ -11,7 +11,13 @@ import { createCookie, redirect } from "react-router";
 import type { AdminUser } from "./types";
 import { sqlNow } from "./format";
 
-const SESSION_COOKIE_NAME = "lumi_admin_session";
+// Tiền tố `__Host-` là chỉ dẫn trình duyệt tự bắt buộc: cookie phải có
+// Secure, Path=/ và không có Domain — đúng những gì cookie này đã cấu hình,
+// nên thêm tiền tố không đổi hành vi, chỉ chặn thêm việc ghi đè cookie từ
+// subdomain khác hoặc từ context không phải HTTPS. Chỉ dùng ở production vì
+// `__Host-` BẮT BUỘC Secure=true — ở dev (http://localhost) trình duyệt sẽ
+// âm thầm từ chối cookie nếu vẫn đặt tiền tố này mà không có HTTPS.
+const SESSION_COOKIE_NAME = import.meta.env.PROD ? "__Host-lumi_admin_session" : "lumi_admin_session";
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 14; // 14 ngày
 const PBKDF2_ITERATIONS = 100_000;
 

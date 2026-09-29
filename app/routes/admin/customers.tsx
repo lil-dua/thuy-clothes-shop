@@ -2,6 +2,7 @@ import { Form, Link, useSearchParams } from "react-router";
 import type { Route } from "./+types/customers";
 import { EmptyState, PageHeader, Pagination, TableWrap } from "~/components/admin/ui";
 import { SearchIcon } from "~/components/icons";
+import { requireAdmin } from "~/lib/auth.server";
 import { listCustomers } from "~/lib/db.server";
 import { formatDate, formatVnd } from "~/lib/format";
 import type { Customer } from "~/lib/types";
@@ -11,6 +12,7 @@ export function meta() {
 }
 
 export async function loader({ request, context }: Route.LoaderArgs) {
+	await requireAdmin(context.cloudflare.env.DB, request);
 	const url = new URL(request.url);
 	const result = await listCustomers(context.cloudflare.env.DB, {
 		search: url.searchParams.get("q")?.trim() || null,

@@ -1,6 +1,6 @@
 {
 	"name": "lumi-shop",
-	"description": "Website b\u00e1n qu\u1ea7n \u00e1o n\u1eef & tr\u1ebb em \u2014 storefront + trang qu\u1ea3n tr\u1ecb tr\u00ean Cloudflare Workers",
+	"description": "Website bán quần áo nữ & trẻ em — storefront + trang quản trị trên Cloudflare Workers",
 	"cloudflare": {
 		"label": "React Router Framework Starter",
 		"products": [
@@ -17,11 +17,11 @@
 		"isbot": "5.1.32",
 		"react": "19.2.1",
 		"react-dom": "19.2.1",
-		"react-router": "7.9.6"
+		"react-router": "7.18.4"
 	},
 	"devDependencies": {
-		"@cloudflare/vite-plugin": "1.52.1",
-		"@react-router/dev": "7.9.6",
+		"@cloudflare/vite-plugin": "1.62.0",
+		"@react-router/dev": "7.18.4",
 		"@tailwindcss/vite": "4.1.17",
 		"@types/node": "24.10.1",
 		"@types/react": "19.2.7",

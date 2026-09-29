@@ -1,6 +1,7 @@
 import { Form, Link, data, redirect, useNavigation, useSearchParams } from "react-router";
 import type { Route } from "./+types/login";
 import { getAdminUser, login } from "~/lib/auth.server";
+import { checkRateLimit, clientIp, rateLimitMessage } from "~/lib/rate-limit.server";
 
 export function meta() {
 	return [{ title: "Đăng nhập quản trị — Lumi" }, { name: "robots", content: "noindex" }];
@@ -14,16 +15,41 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 }
 
 export async function action({ request, context }: Route.ActionArgs) {
+	const db = context.cloudflare.env.DB;
+
 	const form = await request.formData();
 	const username = String(form.get("username") ?? "");
 	const password = String(form.get("password") ?? "");
 	const next = String(form.get("next") ?? "/admin");
 
+	// Chặn dò mật khẩu trước khi tốn CPU cho PBKDF2: 8 lần thử / 5 phút cho
+	// mỗi IP, VÀ 8 lần thử / 5 phút cho mỗi username — chỉ giới hạn theo IP thì
+	// brute force xoay nhiều IP (ví dụ dải IPv6) nhắm vào một tài khoản vẫn lọt.
+	const ipRate = await checkRateLimit(
+		db,
+		{ scope: "admin-login", limit: 8, windowSeconds: 5 * 60 },
+		clientIp(request),
+	);
+	const userRate = username
+		? await checkRateLimit(
+				db,
+				{ scope: "admin-login-user", limit: 8, windowSeconds: 5 * 60 },
+				username.trim().toLowerCase(),
+			)
+		: { allowed: true, retryAfterSeconds: 0 };
+	const rate = !ipRate.allowed ? ipRate : userRate;
+	if (!rate.allowed) {
+		return data(
+			{ error: rateLimitMessage(rate.retryAfterSeconds) },
+			{ status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } },
+		);
+	}
+
 	if (!username || !password) {
 		return data({ error: "Vui lòng nhập tên đăng nhập và mật khẩu" }, { status: 400 });
 	}
 
-	const result = await login(context.cloudflare.env.DB, username, password);
+	const result = await login(db, username, password);
 	if (!result.ok) return data({ error: result.error }, { status: 401 });
 
 	// Chỉ cho phép quay về đường dẫn nội bộ trong khu vực quản trị
